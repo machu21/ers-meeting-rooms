@@ -5,6 +5,8 @@ import Link from 'next/link'
 import VirtualMap from './VirtualMap'
 import MapNavigation from './MapNavigation' // <-- Import the new navigation
 
+
+
 async function signOut() {
   'use server'
   const supabaseClient = await createClient()

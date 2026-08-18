@@ -5,23 +5,26 @@ import { createClient } from '@/lib/supabase/client'
 import { updateEmployeeProfile } from './actions'
 import Link from 'next/link'
 import { UserCircleIcon } from '@heroicons/react/24/solid'
+import { useRouter } from 'next/navigation'
 
 export default function SettingsPage() {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
   const [profile, setProfile] = useState<any>(null)
-  
+  const [displayName, setDisplayName] = useState('')
+  const router = useRouter()
+
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
 
-  // Fetch current user data on load
   useEffect(() => {
     async function loadProfile() {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
         setProfile(data)
+        setDisplayName(data?.display_name || '')
         if (data?.avatar_url) setPreviewImage(data.avatar_url)
       }
       setLoading(false)
@@ -29,12 +32,9 @@ export default function SettingsPage() {
     loadProfile()
   }, [supabase])
 
-  // Handle local image preview before uploading
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) {
-      setPreviewImage(URL.createObjectURL(file))
-    }
+    if (file) setPreviewImage(URL.createObjectURL(file))
   }
 
   const handleSubmit = async (formData: FormData) => {
@@ -42,6 +42,10 @@ export default function SettingsPage() {
     startTransition(async () => {
       const result = await updateEmployeeProfile(formData)
       setMessage({ type: result.success ? 'success' : 'error', text: result.message })
+      if (result.success) {
+        setProfile((prev: any) => ({ ...prev, display_name: displayName }))
+        router.refresh()
+      }
     })
   }
 
@@ -68,8 +72,7 @@ export default function SettingsPage() {
           )}
 
           <form action={handleSubmit} className="flex flex-col gap-6">
-            
-            {/* Avatar Upload */}
+
             <div>
               <label className="mb-3 block text-sm font-medium text-gray-700">Profile Photo</label>
               <div className="flex items-center gap-6">
@@ -93,7 +96,6 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* Display Name */}
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="display_name">
                 Screen Name
@@ -102,7 +104,8 @@ export default function SettingsPage() {
                 className="w-full rounded-md border px-4 py-2 text-black focus:border-blue-500 focus:outline-none"
                 name="display_name"
                 type="text"
-                defaultValue={profile?.display_name || ''}
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
                 placeholder="e.g., Brian P."
               />
               <p className="mt-1 text-xs text-gray-400">This name will appear under your avatar on the map.</p>

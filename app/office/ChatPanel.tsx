@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { XMarkIcon } from '@heroicons/react/24/solid'
+import { XMarkIcon, UserGroupIcon, UserIcon } from '@heroicons/react/24/solid'
 
 type Message = {
   id: string
@@ -25,7 +25,7 @@ export default function ChatPanel({ roomId, currentUser, allUsers, onClose }: Ch
   const supabase = createClient()
   const [activeTab, setActiveTab] = useState<'group' | 'direct'>('group')
   const [selectedDmUser, setSelectedDmUser] = useState<string | null>(null)
-  
+
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -43,7 +43,7 @@ export default function ChatPanel({ roomId, currentUser, allUsers, onClose }: Ch
           .select('*')
           .order('created_at', { ascending: true })
           .limit(100)
-        
+
         if (data) {
           setMessages(data as Message[])
           sessionStorage.setItem(CACHE_KEY, JSON.stringify(data))
@@ -57,10 +57,10 @@ export default function ChatPanel({ roomId, currentUser, allUsers, onClose }: Ch
   useEffect(() => {
     const channel = supabase
       .channel(`chat_${roomId}`)
-      .on('postgres_changes', { 
-        event: 'INSERT', 
-        schema: 'public', 
-        table: 'messages' 
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages'
       }, (payload) => {
         const newMessage = payload.new as Message
         if (newMessage.type === 'group' || newMessage.sender_id === currentUser.id || newMessage.receiver_id === currentUser.id) {
@@ -105,82 +105,109 @@ export default function ChatPanel({ roomId, currentUser, allUsers, onClose }: Ch
     return m.type === 'direct' && (m.sender_id === selectedDmUser || m.receiver_id === selectedDmUser)
   })
 
+  const otherUsers = allUsers.filter(u => u.id !== currentUser.id)
+
   return (
-    <div className="flex h-[600px] w-80 flex-col overflow-hidden rounded-xl border-4 border-gray-300 bg-white shadow-2xl shrink-0">
-      
+    <div className="flex h-[min(600px,70vh)] w-80 flex-col overflow-hidden rounded-2xl border border-gray-700/50 bg-gray-900/90 shadow-2xl backdrop-blur-md shrink-0">
+
       {/* Header */}
-      <div className="flex items-center justify-between border-b bg-gray-50 px-4 py-3">
-        <h3 className="font-semibold text-gray-800">Office Chat</h3>
-        <button onClick={onClose} className="rounded p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-800 transition">
-          <XMarkIcon className="h-5 w-5" />
+      <div className="flex items-center justify-between border-b border-gray-700/50 bg-gray-900/60 px-4 py-3">
+        <h3 className="text-sm font-semibold tracking-wide text-white">Office Chat</h3>
+        <button
+          onClick={onClose}
+          className="rounded-lg p-1.5 text-gray-400 transition hover:bg-gray-700/60 hover:text-white"
+        >
+          <XMarkIcon className="h-4 w-4" />
         </button>
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b bg-white text-sm">
-        <button 
+      <div className="flex gap-1 border-b border-gray-700/50 bg-gray-900/40 px-2 pt-2">
+        <button
           onClick={() => setActiveTab('group')}
-          className={`flex-1 py-2 font-medium transition ${activeTab === 'group' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-t-lg py-2 text-xs font-medium transition ${
+            activeTab === 'group'
+              ? 'bg-gray-800/80 text-blue-400 border-b-2 border-blue-500'
+              : 'text-gray-400 hover:text-gray-200'
+          }`}
         >
+          <UserGroupIcon className="h-3.5 w-3.5" />
           Group
         </button>
-        <button 
+        <button
           onClick={() => setActiveTab('direct')}
-          className={`flex-1 py-2 font-medium transition ${activeTab === 'direct' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-t-lg py-2 text-xs font-medium transition ${
+            activeTab === 'direct'
+              ? 'bg-gray-800/80 text-blue-400 border-b-2 border-blue-500'
+              : 'text-gray-400 hover:text-gray-200'
+          }`}
         >
+          <UserIcon className="h-3.5 w-3.5" />
           Direct
         </button>
       </div>
 
       {/* DM User Selector */}
       {activeTab === 'direct' && (
-        <div className="border-b bg-gray-50 p-2">
-          <select 
-            className="w-full rounded border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:ring-blue-500"
+        <div className="border-b border-gray-700/50 bg-gray-900/40 p-2">
+          <select
+            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-2 py-1.5 text-xs text-gray-200 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             value={selectedDmUser || ''}
             onChange={(e) => setSelectedDmUser(e.target.value)}
           >
             <option value="" disabled>Select a colleague...</option>
-            {allUsers.filter(u => u.id !== currentUser.id).map(u => (
-              <option key={u.id} value={u.id}>{u.name}</option>
-            ))}
+            {otherUsers.length === 0 ? (
+              <option disabled>No one else is here</option>
+            ) : (
+              otherUsers.map(u => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))
+            )}
           </select>
         </div>
       )}
 
       {/* Message List */}
-      <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
+      <div className="flex-1 space-y-3 overflow-y-auto p-3 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
         {activeTab === 'direct' && !selectedDmUser ? (
-          <div className="text-center text-sm text-gray-400 mt-10">Select someone to start chatting.</div>
+          <div className="mt-10 text-center text-xs text-gray-500">Select someone to start chatting.</div>
         ) : displayedMessages.length === 0 ? (
-          <div className="text-center text-sm text-gray-400 mt-10">No messages yet.</div>
+          <div className="mt-10 text-center text-xs text-gray-500">No messages yet.</div>
         ) : (
-          <div className="space-y-3">
+          <>
             {displayedMessages.map((msg) => {
               const isMe = msg.sender_id === currentUser.id
               return (
                 <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                  {!isMe && activeTab === 'group' && <span className="mb-0.5 text-[10px] font-medium text-gray-500">{msg.sender_name}</span>}
-                  <div className={`rounded-xl px-3 py-2 text-sm max-w-[85%] ${isMe ? 'bg-blue-600 text-white rounded-br-none' : 'bg-white border border-gray-200 text-gray-800 rounded-bl-none shadow-sm'}`}>
+                  {!isMe && activeTab === 'group' && (
+                    <span className="mb-0.5 px-1 text-[10px] font-medium text-gray-500">{msg.sender_name}</span>
+                  )}
+                  <div
+                    className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-snug ${
+                      isMe
+                        ? 'rounded-br-sm bg-blue-600 text-white'
+                        : 'rounded-bl-sm border border-gray-700/60 bg-gray-800 text-gray-100'
+                    }`}
+                  >
                     {msg.content}
                   </div>
                 </div>
               )
             })}
             <div ref={messagesEndRef} />
-          </div>
+          </>
         )}
       </div>
 
       {/* Input Area */}
-      <form onSubmit={sendMessage} className="border-t bg-white p-3">
+      <form onSubmit={sendMessage} className="border-t border-gray-700/50 bg-gray-900/60 p-3">
         <input
           type="text"
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           placeholder="Type a message..."
           disabled={activeTab === 'direct' && !selectedDmUser}
-          className="w-full rounded-full border border-gray-300 bg-gray-50 px-4 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+          className="w-full rounded-full border border-gray-700 bg-gray-800 px-4 py-2 text-sm text-white placeholder-gray-500 transition focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-40"
         />
       </form>
     </div>
