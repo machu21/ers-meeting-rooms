@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import VirtualMap from './VirtualMap'
-import MapNavigation from './MapNavigation' // <-- Import the new navigation
+import MapNavigation from './MapNavigation' 
 
 
 

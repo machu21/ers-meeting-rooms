@@ -11,12 +11,16 @@ export default function SettingsPage() {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
   const [profile, setProfile] = useState<any>(null)
+  
+  // Form State
   const [displayName, setDisplayName] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [previewImage, setPreviewImage] = useState<string | null>(null)
+  
   const router = useRouter()
-
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
-  const [previewImage, setPreviewImage] = useState<string | null>(null)
 
   useEffect(() => {
     async function loadProfile() {
@@ -38,12 +42,22 @@ export default function SettingsPage() {
   }
 
   const handleSubmit = async (formData: FormData) => {
+    // Client-side validation before hitting the server
+    if (password && password !== confirmPassword) {
+      setMessage({ type: 'error', text: 'Passwords do not match.' })
+      return
+    }
+
     setMessage(null)
     startTransition(async () => {
       const result = await updateEmployeeProfile(formData)
       setMessage({ type: result.success ? 'success' : 'error', text: result.message })
+      
       if (result.success) {
         setProfile((prev: any) => ({ ...prev, display_name: displayName }))
+        // Clear password fields on success so they don't linger
+        setPassword('')
+        setConfirmPassword('')
         router.refresh()
       }
     })
@@ -71,50 +85,90 @@ export default function SettingsPage() {
             </div>
           )}
 
-          <form action={handleSubmit} className="flex flex-col gap-6">
+          <form action={handleSubmit} className="flex flex-col gap-8">
+            
+            {/* --- PROFILE SECTION --- */}
+            <div className="flex flex-col gap-6">
+              <h2 className="text-lg font-semibold text-gray-800 border-b pb-2">Profile Information</h2>
+              
+              <div>
+                <label className="mb-3 block text-sm font-medium text-gray-700">Profile Photo</label>
+                <div className="flex items-center gap-6">
+                  <div className="h-24 w-24 overflow-hidden rounded-full border-2 border-gray-200 bg-gray-100 shadow-sm flex-shrink-0">
+                    {previewImage ? (
+                      <img src={previewImage} alt="Preview" className="h-full w-full object-cover" />
+                    ) : (
+                      <UserCircleIcon className="h-full w-full text-gray-400 p-2" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <input
+                      type="file"
+                      name="avatar"
+                      accept="image/*"
+                      onChange={handleImageChange}
+                      className="block w-full text-sm text-gray-500 file:mr-4 file:rounded-md file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-blue-700 hover:file:bg-blue-100"
+                    />
+                    <p className="mt-2 text-xs text-gray-400">JPG, PNG or GIF. Max size 2MB.</p>
+                  </div>
+                </div>
+              </div>
 
-            <div>
-              <label className="mb-3 block text-sm font-medium text-gray-700">Profile Photo</label>
-              <div className="flex items-center gap-6">
-                <div className="h-24 w-24 overflow-hidden rounded-full border-2 border-gray-200 bg-gray-100 shadow-sm flex-shrink-0">
-                  {previewImage ? (
-                    <img src={previewImage} alt="Preview" className="h-full w-full object-cover" />
-                  ) : (
-                    <UserCircleIcon className="h-full w-full text-gray-400 p-2" />
-                  )}
-                </div>
-                <div className="flex-1">
-                  <input
-                    type="file"
-                    name="avatar"
-                    accept="image/*"
-                    onChange={handleImageChange}
-                    className="block w-full text-sm text-gray-500 file:mr-4 file:rounded-md file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-blue-700 hover:file:bg-blue-100"
-                  />
-                  <p className="mt-2 text-xs text-gray-400">JPG, PNG or GIF. Max size 2MB.</p>
-                </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="display_name">
+                  Screen Name
+                </label>
+                <input
+                  className="w-full rounded-md border px-4 py-2 text-black focus:border-blue-500 focus:outline-none"
+                  name="display_name"
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="e.g., Brian P."
+                />
+                <p className="mt-1 text-xs text-gray-400">This name will appear under your avatar on the map.</p>
               </div>
             </div>
 
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="display_name">
-                Screen Name
-              </label>
-              <input
-                className="w-full rounded-md border px-4 py-2 text-black focus:border-blue-500 focus:outline-none"
-                name="display_name"
-                type="text"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="e.g., Brian P."
-              />
-              <p className="mt-1 text-xs text-gray-400">This name will appear under your avatar on the map.</p>
+            {/* --- SECURITY SECTION --- */}
+            <div className="flex flex-col gap-6 pt-4">
+              <h2 className="text-lg font-semibold text-gray-800 border-b pb-2">Security</h2>
+              
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="password">
+                    New Password
+                  </label>
+                  <input
+                    className="w-full rounded-md border px-4 py-2 text-black focus:border-blue-500 focus:outline-none"
+                    name="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Leave blank to keep current"
+                  />
+                </div>
+                
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="confirm_password">
+                    Confirm Password
+                  </label>
+                  <input
+                    className="w-full rounded-md border px-4 py-2 text-black focus:border-blue-500 focus:outline-none"
+                    name="confirm_password"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Confirm new password"
+                  />
+                </div>
+              </div>
             </div>
 
             <button
               type="submit"
               disabled={isPending}
-              className="mt-4 w-full rounded-md bg-blue-600 px-4 py-2 font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+              className="mt-2 w-full rounded-md bg-blue-600 px-4 py-2.5 font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
             >
               {isPending ? 'Saving...' : 'Save Changes'}
             </button>

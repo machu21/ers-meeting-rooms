@@ -1,8 +1,15 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { updateUser, toggleUserStatus } from './actions'
-import { PencilSquareIcon, TrashIcon, ArrowPathIcon, MagnifyingGlassIcon } from '@heroicons/react/24/solid'
+import { 
+  PencilSquareIcon, 
+  TrashIcon, 
+  ArrowPathIcon, 
+  MagnifyingGlassIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon
+} from '@heroicons/react/24/solid'
 
 type User = {
   id: string
@@ -103,12 +110,26 @@ function UserRow({ user }: { user: User }) {
 
 export default function UserManagementTable({ users }: { users: User[] }) {
   const [searchQuery, setSearchQuery] = useState('')
+  
+  // PAGINATION STATE
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 8 // Adjust this number to show more/less users per page
 
-  // Filter users based on email or role matching the search query
+  // Filter users based on email or role
   const filteredUsers = users.filter(user => 
     user.email.toLowerCase().includes(searchQuery.toLowerCase()) || 
     user.role.toLowerCase().includes(searchQuery.toLowerCase())
   )
+
+  // Reset to page 1 whenever a search is typed
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchQuery])
+
+  // PAGINATION MATH
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / itemsPerPage))
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const paginatedUsers = filteredUsers.slice(startIndex, startIndex + itemsPerPage)
 
   return (
     <div className="overflow-hidden rounded-lg border bg-white shadow-sm mt-8">
@@ -144,10 +165,10 @@ export default function UserManagementTable({ users }: { users: User[] }) {
             </tr>
           </thead>
           <tbody>
-            {filteredUsers.map(user => (
+            {paginatedUsers.map(user => (
               <UserRow key={user.id} user={user} />
             ))}
-            {filteredUsers.length === 0 && (
+            {paginatedUsers.length === 0 && (
               <tr>
                 <td colSpan={4} className="p-8 text-center text-gray-500">
                   {searchQuery ? "No users match your search." : "No users found."}
@@ -157,6 +178,46 @@ export default function UserManagementTable({ users }: { users: User[] }) {
           </tbody>
         </table>
       </div>
+
+      {/* PAGINATION CONTROLS */}
+      {filteredUsers.length > 0 && (
+        <div className="flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 sm:px-6">
+          <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm text-gray-700">
+                Showing <span className="font-medium">{startIndex + 1}</span> to <span className="font-medium">{Math.min(startIndex + itemsPerPage, filteredUsers.length)}</span> of{' '}
+                <span className="font-medium">{filteredUsers.length}</span> results
+              </p>
+            </div>
+            <div>
+              <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
+                  className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <span className="sr-only">Previous</span>
+                  <ChevronLeftIcon className="h-5 w-5" aria-hidden="true" />
+                </button>
+                
+                {/* Page Indicators */}
+                <span className="relative inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 focus:outline-offset-0">
+                  Page {currentPage} of {totalPages}
+                </span>
+
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                  className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <span className="sr-only">Next</span>
+                  <ChevronRightIcon className="h-5 w-5" aria-hidden="true" />
+                </button>
+              </nav>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -137,15 +137,21 @@ export async function updateUser(userId: string, formData: FormData) {
 }
 
 export async function toggleUserStatus(userId: string, currentStatus: boolean) {
-  // USE supabaseAdmin INSTEAD OF createClient()
-  
-  // Bypasses RLS to toggle the active state
-  const { error } = await supabaseAdmin
+  // 1. Ban/Unban the user in Supabase Auth (Blocks login and kills active sessions)
+  // currentStatus = true means they are currently active, so we are deactivating (banning) them.
+  const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+    ban_duration: currentStatus ? '876000h' : 'none', // Bans for 100 years, or removes ban
+  })
+
+  if (authError) return { success: false, message: authError.message }
+
+  // 2. Update the visual flag in the profiles table
+  const { error: profileError } = await supabaseAdmin
     .from('profiles')
     .update({ is_active: !currentStatus })
     .eq('id', userId)
 
-  if (error) return { success: false, message: error.message }
+  if (profileError) return { success: false, message: profileError.message }
   
   revalidatePath('/dashboard')
   return { success: true, message: `User ${!currentStatus ? 'reactivated' : 'deactivated'} successfully.` }

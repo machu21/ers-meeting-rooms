@@ -574,14 +574,14 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
   }, [supabase, roomId, currentUser.id, currentUser.name, currentUser.avatar_url, broadcastPosition])
 
   // Keep our own entry in sync if currentUser props change without a remount
-// (Cache Components can preserve component state across client navigation)
-useEffect(() => {
-  const me = playersRef.current.get(currentUser.id)
-  if (me) {
-    me.name = currentUser.name || me.name
-    me.avatar_url = currentUser.avatar_url
-  }
-}, [currentUser.id, currentUser.name, currentUser.avatar_url])
+  // (Cache Components can preserve component state across client navigation)
+  useEffect(() => {
+    const me = playersRef.current.get(currentUser.id)
+    if (me) {
+      me.name = currentUser.name || me.name
+      me.avatar_url = currentUser.avatar_url
+    }
+  }, [currentUser.id, currentUser.name, currentUser.avatar_url])
 
   useEffect(() => {
     const announceLeave = () => {
@@ -896,7 +896,13 @@ useEffect(() => {
               </span>
               {isEditingZones && (
                 <button
-                  onClick={async (e) => { e.stopPropagation(); await deleteZone(zone.id); setZones(await getZones(roomId)); }}
+                  // NEW: Stop the pointer event before it triggers the map's drawing tool
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    await deleteZone(zone.id);
+                    setZones(await getZones(roomId));
+                  }}
                   className="absolute -top-6 right-0 rounded bg-red-600 p-1 text-white hover:bg-red-700"
                 >
                   <TrashIcon className="h-4 w-4" />

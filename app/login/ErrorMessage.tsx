@@ -12,6 +12,11 @@ export default function ErrorMessage() {
   const getFriendlyMessage = (rawMessage: string) => {
     const msg = rawMessage.toLowerCase()
 
+    // NEW: Catch banned/deactivated users
+    if (msg.includes('banned') || msg.includes('suspended')) {
+      return "This user is no longer active. Please contact your administrator."
+    }
+
     if (msg.includes('authenticate') || msg.includes('credentials') || msg.includes('invalid')) {
       return "We didn't recognize that email and password combination. Please check for typos and try again."
     }

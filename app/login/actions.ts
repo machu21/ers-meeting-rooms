@@ -7,7 +7,6 @@ export async function login(formData: FormData) {
   const email = formData.get('email') as string
   const password = formData.get('password') as string
   
-  // Instantiate the Supabase server client
   const supabase = await createClient() 
 
   const { error } = await supabase.auth.signInWithPassword({
@@ -16,9 +15,9 @@ export async function login(formData: FormData) {
   })
 
   if (error) {
-    return redirect('/login?message=Could not authenticate user')
+    // Dynamically pass the actual Supabase error message to the URL
+    return redirect(`/login?message=${encodeURIComponent(error.message)}`)
   }
 
-  // Redirect to the virtual office map after successful login
   return redirect('/office') 
 }
