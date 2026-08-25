@@ -30,6 +30,23 @@ export default function ChatPanel({ roomId, currentUser, allUsers, onClose }: Ch
   const [inputValue, setInputValue] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
+  // NEW: Notification States and Refs to track current view without re-triggering useEffects
+  const [unreadGroup, setUnreadGroup] = useState(false)
+  const [unreadDirect, setUnreadDirect] = useState(false)
+  const activeTabRef = useRef(activeTab)
+  const selectedDmUserRef = useRef(selectedDmUser)
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    activeTabRef.current = activeTab
+    if (activeTab === 'group') setUnreadGroup(false)
+    if (activeTab === 'direct') setUnreadDirect(false)
+  }, [activeTab])
+
+  useEffect(() => {
+    selectedDmUserRef.current = selectedDmUser
+  }, [selectedDmUser])
+
   // 1. Lightweight Caching Strategy
   useEffect(() => {
     const CACHE_KEY = `chat_cache_${currentUser.id}`
@@ -63,18 +80,36 @@ export default function ChatPanel({ roomId, currentUser, allUsers, onClose }: Ch
         table: 'messages'
       }, (payload) => {
         const newMessage = payload.new as Message
+        
         if (newMessage.type === 'group' || newMessage.sender_id === currentUser.id || newMessage.receiver_id === currentUser.id) {
           setMessages((prev) => {
             const updated = [...prev, newMessage]
             sessionStorage.setItem(`chat_cache_${currentUser.id}`, JSON.stringify(updated))
             return updated
           })
+
+          // NEW: Notification Logic
+          // Only notify if the message is from someone else
+          if (newMessage.sender_id !== currentUser.id) {
+            
+            // Trigger Group notification if they aren't on the Group tab
+            if (newMessage.type === 'group' && activeTabRef.current !== 'group') {
+              setUnreadGroup(true)
+            }
+            
+            // Trigger Direct notification if it's meant for them, and they aren't looking at that specific DM
+            if (newMessage.type === 'direct' && newMessage.receiver_id === currentUser.id) {
+              if (activeTabRef.current !== 'direct' || selectedDmUserRef.current !== newMessage.sender_id) {
+                setUnreadDirect(true)
+              }
+            }
+          }
         }
       })
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [roomId, supabase])
+  }, [roomId, supabase, currentUser.id]) // currentUser.id added to dependencies for safety
 
   // Auto-scroll
   useEffect(() => {
@@ -125,7 +160,7 @@ export default function ChatPanel({ roomId, currentUser, allUsers, onClose }: Ch
       <div className="flex gap-1 border-b border-gray-700/50 bg-gray-900/40 px-2 pt-2">
         <button
           onClick={() => setActiveTab('group')}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-t-lg py-2 text-xs font-medium transition ${
+          className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-t-lg py-2 text-xs font-medium transition ${
             activeTab === 'group'
               ? 'bg-gray-800/80 text-blue-400 border-b-2 border-blue-500'
               : 'text-gray-400 hover:text-gray-200'
@@ -133,10 +168,19 @@ export default function ChatPanel({ roomId, currentUser, allUsers, onClose }: Ch
         >
           <UserGroupIcon className="h-3.5 w-3.5" />
           Group
+          
+          {/* NEW: Group Notification Dot */}
+          {unreadGroup && (
+            <span className="absolute right-3 top-2.5 flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500"></span>
+            </span>
+          )}
         </button>
+
         <button
           onClick={() => setActiveTab('direct')}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-t-lg py-2 text-xs font-medium transition ${
+          className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-t-lg py-2 text-xs font-medium transition ${
             activeTab === 'direct'
               ? 'bg-gray-800/80 text-blue-400 border-b-2 border-blue-500'
               : 'text-gray-400 hover:text-gray-200'
@@ -144,6 +188,14 @@ export default function ChatPanel({ roomId, currentUser, allUsers, onClose }: Ch
         >
           <UserIcon className="h-3.5 w-3.5" />
           Direct
+          
+          {/* NEW: Direct Notification Dot */}
+          {unreadDirect && (
+            <span className="absolute right-3 top-2.5 flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500"></span>
+            </span>
+          )}
         </button>
       </div>
 
@@ -153,7 +205,10 @@ export default function ChatPanel({ roomId, currentUser, allUsers, onClose }: Ch
           <select
             className="w-full rounded-lg border border-gray-700 bg-gray-800 px-2 py-1.5 text-xs text-gray-200 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             value={selectedDmUser || ''}
-            onChange={(e) => setSelectedDmUser(e.target.value)}
+            onChange={(e) => {
+              setSelectedDmUser(e.target.value)
+              setUnreadDirect(false) // Clear notification when they select a new user to read messages
+            }}
           >
             <option value="" disabled>Select a colleague...</option>
             {otherUsers.length === 0 ? (
