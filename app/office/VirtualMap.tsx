@@ -2,17 +2,18 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import MeetingMinutesModal from './MeetingMinutesModal'
+import { generateMeetingMinutes, getLatestMeetingMinutes, saveTranscript } from './ai-actions'
 import { getZones, saveZone, deleteZone } from './zone-actions'
 import {
   VideoCameraIcon,
   MicrophoneIcon,
   ChatBubbleLeftRightIcon,
-  MagnifyingGlassPlusIcon,
-  MagnifyingGlassMinusIcon,
   SpeakerWaveIcon,
   SpeakerXMarkIcon,
   RectangleGroupIcon,
-  TrashIcon
+  TrashIcon,
+  SparklesIcon
 } from '@heroicons/react/24/solid'
 import ChatPanel from './ChatPanel'
 
@@ -48,17 +49,14 @@ const ICE_SERVERS = {
     { urls: 'stun:stun1.l.google.com:19302' }
   ]
 }
+
 const PROXIMITY_RADIUS = 150
 const MAP_WIDTH = 1600
 const MAP_HEIGHT = 900
 const AVATAR_RADIUS = 24
 const MOVE_SPEED = 260
 const GLIDE_SPEED = 340
-
-// OPTIMIZATION 1: Increased from 50ms to 150ms to save 66% of Supabase Realtime quota
 const BROADCAST_INTERVAL = 150
-const DEFAULT_MIN_ZOOM = 0.5
-const DEFAULT_MAX_ZOOM = 2.5
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(v, max))
 
@@ -71,11 +69,9 @@ function useVolumeLevel(stream: MediaStream | null) {
       setVolume(0)
       return
     }
-
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
     const analyser = audioContext.createAnalyser()
     analyser.fftSize = 256
-
     const source = audioContext.createMediaStreamSource(stream)
     source.connect(analyser)
 
@@ -85,15 +81,11 @@ function useVolumeLevel(stream: MediaStream | null) {
     const updateVolume = () => {
       analyser.getByteFrequencyData(dataArray)
       let sum = 0
-      for (let i = 0; i < dataArray.length; i++) {
-        sum += dataArray[i]
-      }
+      for (let i = 0; i < dataArray.length; i++) sum += dataArray[i]
       setVolume(sum / dataArray.length)
       animationFrameId = requestAnimationFrame(updateVolume)
     }
-
     updateVolume()
-
     return () => {
       cancelAnimationFrame(animationFrameId)
       source.disconnect()
@@ -101,11 +93,9 @@ function useVolumeLevel(stream: MediaStream | null) {
       audioContext.close()
     }
   }, [stream])
-
   return volume
 }
 
-// 2. Extracted RemoteMedia Component
 const RemoteMedia = ({ stream }: { stream: MediaStream }) => {
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement>(null)
   useEffect(() => { if (mediaRef.current) mediaRef.current.srcObject = stream }, [stream])
@@ -114,7 +104,6 @@ const RemoteMedia = ({ stream }: { stream: MediaStream }) => {
   else return <audio ref={mediaRef as React.RefObject<HTMLAudioElement>} autoPlay playsInline className="hidden" />
 }
 
-// 3. Extracted Avatar Component
 const MapAvatar = ({
   user,
   isMe,
@@ -124,7 +113,6 @@ const MapAvatar = ({
   cameraActive,
   micActive,
   mediaError,
-  zoom,
   videoRef
 }: {
   user: MapUser
@@ -135,7 +123,6 @@ const MapAvatar = ({
   cameraActive: boolean
   micActive: boolean
   mediaError: string | null
-  zoom: number
   videoRef: React.RefObject<HTMLVideoElement | null>
 }) => {
   const streamToMeasure = isMe ? (micActive ? localStream : null) : remoteStream
@@ -151,9 +138,6 @@ const MapAvatar = ({
       ? 'ring-4 ring-blue-400/50'
       : ''
 
-  const avatarDamp = clamp(Math.pow(zoom, -0.4), 0.6, 1.8)
-
-  // 👻 GHOST MODE VISUALS
   const isGhost = isMe && currentUserRole === 'admin'
 
   return (
@@ -162,7 +146,6 @@ const MapAvatar = ({
       style={{
         left: `${user.x - AVATAR_RADIUS}px`,
         top: `${user.y - AVATAR_RADIUS}px`,
-        transform: `scale(${avatarDamp})`,
         transformOrigin: 'top center'
       }}
     >
@@ -194,28 +177,39 @@ const MapAvatar = ({
   )
 }
 
-type PlayerMeta = {
-  name: string
-  avatarColor: string
-  avatar_url?: string | null
-  targetX: number
-  targetY: number
-  renderX: number
-  renderY: number
-}
-
+type PlayerMeta = { name: string; avatarColor: string; avatar_url?: string | null; targetX: number; targetY: number; renderX: number; renderY: number }
 type Zone = { id: string; name: string; x: number; y: number; width: number; height: number }
 
-// 4. Main VirtualMap Component
 export default function VirtualMap({ currentUser, roomId, mapBackground, ambientAudio, disableMic = false }: VirtualMapProps) {
   const supabase = createClient()
   const videoRef = useRef<HTMLVideoElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
+  
+  const outerContainerRef = useRef<HTMLDivElement>(null)
+  const mapBoardRef = useRef<HTMLDivElement>(null)
+
+  // 1. Map Auto-Scaling State
+  const [fitScale, setFitScale] = useState(1)
 
   const [zones, setZones] = useState<Zone[]>([])
   const [isEditingZones, setIsEditingZones] = useState(false)
   const [isDrawing, setIsDrawing] = useState(false)
   const [draftZone, setDraftZone] = useState<{ x: number, y: number, w: number, h: number } | null>(null)
+
+  const [generatingZoneId, setGeneratingZoneId] = useState<string | null>(null)
+  const [activeMinutes, setActiveMinutes] = useState<{ summary: string; action_items: string; zoneName: string } | null>(null)
+
+  const handleGenerateMinutes = async (e: React.MouseEvent, zoneId: string, zoneName: string) => {
+    e.stopPropagation()
+    setGeneratingZoneId(zoneId)
+    const res = await generateMeetingMinutes(zoneId)
+    if (res.success) {
+      const latest = await getLatestMeetingMinutes(zoneId)
+      if (latest) setActiveMinutes({ ...latest, zoneName })
+    } else {
+      alert(res.message)
+    }
+    setGeneratingZoneId(null)
+  }
 
   const ambientAudioRef = useRef<HTMLAudioElement>(null)
   const [isAmbientPlaying, setIsAmbientPlaying] = useState(false)
@@ -233,42 +227,74 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
   const [mediaError, setMediaError] = useState<string | null>(null)
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({})
 
-  const [zoom, setZoom] = useState(1)
-  const [viewport, setViewport] = useState({ w: 0, h: 0 })
-  const [zoomBounds, setZoomBounds] = useState({ min: DEFAULT_MIN_ZOOM, max: DEFAULT_MAX_ZOOM, cover: 1 })
-  const zoomInitialized = useRef(false)
-
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map())
   const localStreamRef = useRef<MediaStream | null>(null)
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
   const isChannelJoined = useRef(false)
 
-  // OPTIMIZATION: Track ICE candidates for batching
   const iceCandidatesBuffer = useRef<{ [targetId: string]: any[] }>({})
   const iceFlushTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const playersRef = useRef<Map<string, PlayerMeta>>(
-    new Map([
-      [currentUser.id, {
-        name: currentUser.name || 'You',
-        avatarColor: 'bg-blue-500',
-        avatar_url: currentUser.avatar_url,
-        targetX: 800, targetY: 450, renderX: 800, renderY: 450
-      }],
-    ])
+    new Map([[currentUser.id, { name: currentUser.name || 'You', avatarColor: 'bg-blue-500', avatar_url: currentUser.avatar_url, targetX: 800, targetY: 450, renderX: 800, renderY: 450 }]])
   )
   const pressedKeys = useRef<Set<string>>(new Set())
   const clickTarget = useRef<{ x: number; y: number } | null>(null)
-
-  // OPTIMIZATION: Better broadcast tracking
   const lastBroadcastAt = useRef(0)
   const lastBroadcastPos = useRef({ x: 800, y: 450 })
 
   const [users, setUsers] = useState<MapUser[]>(() =>
-    Array.from(playersRef.current.entries()).map(([id, p]) => ({
-      id, name: p.name, x: p.renderX, y: p.renderY, avatarColor: p.avatarColor, avatar_url: p.avatar_url
-    }))
+    Array.from(playersRef.current.entries()).map(([id, p]) => ({ id, name: p.name, x: p.renderX, y: p.renderY, avatarColor: p.avatarColor, avatar_url: p.avatar_url }))
   )
+
+  const me = users.find(u => u.id === currentUser.id) || { x: 800, y: 450, id: currentUser.id, name: currentUser.name, avatarColor: 'bg-blue-500' }
+  const myCurrentZone = zones.find(z => me.x >= z.x && me.x <= z.x + z.width && me.y >= z.y && me.y <= z.y + z.height)
+
+  const recognitionRef = useRef<any>(null)
+  const [isListening, setIsListening] = useState(false)
+  const myZoneRef = useRef<Zone | undefined>(myCurrentZone)
+  const micActiveRef = useRef<boolean>(micActive)
+
+  useEffect(() => { myZoneRef.current = myCurrentZone }, [myCurrentZone])
+  useEffect(() => { micActiveRef.current = micActive }, [micActive])
+
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SpeechRecognition) return
+
+    const recognition = new SpeechRecognition()
+    recognition.continuous = true
+    recognition.interimResults = false
+    recognition.lang = 'en-US'
+
+    recognition.onresult = async (event: any) => {
+      const currentZone = myZoneRef.current
+      if (currentZone && micActiveRef.current) {
+        const transcript = event.results[event.resultIndex][0].transcript.trim()
+        if (transcript.length > 0) await saveTranscript(currentZone.id, currentUser.name || 'Anonymous', transcript)
+      }
+    }
+
+    recognition.onend = () => {
+      if (myZoneRef.current && micActiveRef.current) {
+        try { recognition.start() } catch (e) {}
+      } else {
+        setIsListening(false)
+      }
+    }
+    recognitionRef.current = recognition
+    return () => recognition.stop()
+  }, [currentUser.name])
+
+  useEffect(() => {
+    if (!recognitionRef.current) return
+    const shouldListen = !!myCurrentZone && micActive
+    if (shouldListen && !isListening) {
+      try { recognitionRef.current.start(); setIsListening(true) } catch(e) {}
+    } else if (!shouldListen && isListening) {
+      try { recognitionRef.current.stop(); setIsListening(false) } catch(e) {}
+    }
+  }, [myCurrentZone, micActive, isListening])
 
   const broadcastPosition = useCallback((x: number, y: number, force = false) => {
     if (currentUser.role === 'admin') return
@@ -276,7 +302,6 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
 
     const now = Date.now()
     if (!force && now - lastBroadcastAt.current < BROADCAST_INTERVAL) return
-
     lastBroadcastAt.current = now
     lastBroadcastPos.current = { x, y }
 
@@ -287,49 +312,33 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
     })
   }, [currentUser.id, currentUser.name, currentUser.avatar_url, currentUser.role])
 
+  // Resize Observer for Fixed Map Scaling
   useEffect(() => {
-    if (!containerRef.current) return
+    if (!outerContainerRef.current) return
     const observer = new ResizeObserver((entries) => {
-      setViewport({ w: entries[0].contentRect.width, h: entries[0].contentRect.height })
+      const { width, height } = entries[0].contentRect
+      // Subtract some padding so the map doesn't touch the edges completely
+      const paddingX = 80
+      const paddingY = 80
+      const scale = Math.min((width - paddingX) / MAP_WIDTH, (height - paddingY) / MAP_HEIGHT)
+      setFitScale(clamp(scale, 0.2, 2))
     })
-    observer.observe(containerRef.current)
+    observer.observe(outerContainerRef.current)
     return () => observer.disconnect()
   }, [])
 
-  useEffect(() => {
-    if (viewport.w <= 0 || viewport.h <= 0) return
-    const coverZoom = Math.max(viewport.w / MAP_WIDTH, viewport.h / MAP_HEIGHT)
-    const min = Math.min(DEFAULT_MIN_ZOOM, coverZoom * 0.6)
-    const max = Math.max(DEFAULT_MAX_ZOOM, coverZoom * 1.8)
-    setZoomBounds({ min, max, cover: coverZoom })
-
-    if (!zoomInitialized.current) {
-      zoomInitialized.current = true
-      setZoom(coverZoom)
-    } else {
-      setZoom(z => clamp(z, min, max))
-    }
-  }, [viewport.w, viewport.h])
-
-  useEffect(() => {
-    getZones(roomId).then(setZones)
-  }, [roomId])
+  useEffect(() => { getZones(roomId).then(setZones) }, [roomId])
 
   useEffect(() => {
     if (currentUser.role === 'admin' && !isEditingZones) return
-
     const me = users.find(u => u.id === currentUser.id)
     if (!me) return
 
-    const getUserZone = (ux: number, uy: number) => {
-      return zones.find(z => ux >= z.x && ux <= z.x + z.width && uy >= z.y && uy <= z.y + z.height)
-    }
-
+    const getUserZone = (ux: number, uy: number) => zones.find(z => ux >= z.x && ux <= z.x + z.width && uy >= z.y && uy <= z.y + z.height)
     const myZone = getUserZone(me.x, me.y)
 
     users.forEach(async (otherUser) => {
       if (otherUser.id === currentUser.id) return
-
       const theirZone = getUserZone(otherUser.x, otherUser.y)
       const distance = Math.hypot(otherUser.x - me.x, otherUser.y - me.y)
       const hasConnection = peerConnections.current.has(otherUser.id)
@@ -341,41 +350,31 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
         if (currentUser.id > otherUser.id) {
           const pc = createPeerConnection(otherUser.id)
           try {
-            const offer = await pc.createOffer()
+            const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
             await pc.setLocalDescription(offer)
             channelRef.current?.send({ type: 'broadcast', event: 'webrtc-offer', payload: { targetId: otherUser.id, senderId: currentUser.id, sdp: offer } })
-          } catch (err) { console.error("Offer creation failed:", err) }
+          } catch (err) {}
         }
       } else if (!shouldConnect && hasConnection) {
         const pc = peerConnections.current.get(otherUser.id)
         if (pc) pc.close()
         peerConnections.current.delete(otherUser.id)
-        setRemoteStreams(prev => {
-          const newState = { ...prev }
-          delete newState[otherUser.id]
-          return newState
-        })
+        setRemoteStreams(prev => { const newState = { ...prev }; delete newState[otherUser.id]; return newState })
       }
     })
   }, [users, currentUser.id, currentUser.role, localStream, zones, isEditingZones])
 
   useEffect(() => {
-    const isTyping = () =>
-      document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA'
-
     const MOVE_KEYS = new Set(['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd'])
-
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isTyping()) return
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return
       const key = e.key.toLowerCase()
       if (!MOVE_KEYS.has(key)) return
       e.preventDefault()
       clickTarget.current = null
       pressedKeys.current.add(key)
     }
-    const handleKeyUp = (e: KeyboardEvent) => {
-      pressedKeys.current.delete(e.key.toLowerCase())
-    }
+    const handleKeyUp = (e: KeyboardEvent) => pressedKeys.current.delete(e.key.toLowerCase())
     const handleBlur = () => pressedKeys.current.clear()
 
     window.addEventListener('keydown', handleKeyDown)
@@ -399,29 +398,21 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
           setMediaError(null)
           if (videoRef.current) videoRef.current.srcObject = stream
         } catch (err: any) {
-          console.warn("Media access warning:", err)
           if (err.name === 'NotReadableError' && cameraActive && micActive) {
             try {
               stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true })
-              setLocalStream(stream)
-              localStreamRef.current = stream
-              setMediaError("Camera in use by another window. Audio only active.")
+              setLocalStream(stream); localStreamRef.current = stream; setMediaError("Camera in use by another window. Audio only active.")
               return
-            } catch (fallbackErr) {
-              console.error("Fallback failed:", fallbackErr)
-            }
+            } catch (fallbackErr) {}
           }
           setMediaError("Could not access camera/microphone.")
         }
       } else {
-        setLocalStream(null)
-        localStreamRef.current = null
+        setLocalStream(null); localStreamRef.current = null
       }
     }
     enableMedia()
-    return () => {
-      if (stream) stream.getTracks().forEach(track => track.stop())
-    }
+    return () => { if (stream) stream.getTracks().forEach(track => track.stop()) }
   }, [cameraActive, micActive])
 
   useEffect(() => {
@@ -430,7 +421,6 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
     setRemoteStreams({})
   }, [localStream])
 
-  // OPTIMIZATION 3: WebRTC ICE Batching
   const createPeerConnection = (targetId: string) => {
     const pc = new RTCPeerConnection(ICE_SERVERS)
     if (localStreamRef.current) {
@@ -440,20 +430,13 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
 
     pc.onicecandidate = (event) => {
       if (event.candidate && channelRef.current) {
-        if (!iceCandidatesBuffer.current[targetId]) {
-          iceCandidatesBuffer.current[targetId] = []
-        }
+        if (!iceCandidatesBuffer.current[targetId]) iceCandidatesBuffer.current[targetId] = []
         iceCandidatesBuffer.current[targetId].push(event.candidate.toJSON())
 
-        // Buffer candidates for 500ms before sending a single payload
         if (!iceFlushTimeout.current) {
           iceFlushTimeout.current = setTimeout(() => {
             Object.entries(iceCandidatesBuffer.current).forEach(([tid, candidates]) => {
-              channelRef.current?.send({
-                type: 'broadcast',
-                event: 'webrtc-ice-batch',
-                payload: { targetId: tid, senderId: currentUser.id, candidates }
-              })
+              channelRef.current?.send({ type: 'broadcast', event: 'webrtc-ice-batch', payload: { targetId: tid, senderId: currentUser.id, candidates } })
             })
             iceCandidatesBuffer.current = {}
             iceFlushTimeout.current = null
@@ -468,7 +451,6 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
   }
 
   useEffect(() => {
-
     const roomChannel = supabase.channel(roomId, { config: { broadcast: { self: false } } })
     channelRef.current = roomChannel
 
@@ -477,83 +459,57 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
         const { id, x, y, name, avatarColor, avatar_url } = payload.payload
         const existing = playersRef.current.get(id)
         if (existing) {
-          existing.targetX = x
-          existing.targetY = y
-          existing.name = name || existing.name
-          existing.avatarColor = avatarColor || existing.avatarColor
-          existing.avatar_url = avatar_url
+          existing.targetX = x; existing.targetY = y; existing.name = name || existing.name; existing.avatarColor = avatarColor || existing.avatarColor; existing.avatar_url = avatar_url
         } else {
-          playersRef.current.set(id, {
-            name: name || 'Colleague',
-            avatarColor: avatarColor || 'bg-indigo-500',
-            avatar_url,
-            targetX: x, targetY: y, renderX: x, renderY: y
-          })
+          playersRef.current.set(id, { name: name || 'Colleague', avatarColor: avatarColor || 'bg-indigo-500', avatar_url, targetX: x, targetY: y, renderX: x, renderY: y })
         }
       })
-
       .on('broadcast', { event: 'webrtc-offer' }, async (payload) => {
         const { targetId, senderId, sdp } = payload.payload
         if (targetId !== currentUser.id) return
-
         const pc = createPeerConnection(senderId)
         try {
           await pc.setRemoteDescription(new RTCSessionDescription(sdp))
           const answer = await pc.createAnswer()
           await pc.setLocalDescription(answer)
           roomChannel.send({ type: 'broadcast', event: 'webrtc-answer', payload: { targetId: senderId, senderId: currentUser.id, sdp: answer } })
-        } catch (err) { console.error("Offer error:", err) }
+        } catch (err) {}
       })
       .on('broadcast', { event: 'webrtc-answer' }, async (payload) => {
         const { targetId, senderId, sdp } = payload.payload
         if (targetId !== currentUser.id) return
         const pc = peerConnections.current.get(senderId)
         if (pc && pc.signalingState === 'have-local-offer') {
-          try { await pc.setRemoteDescription(new RTCSessionDescription(sdp)) }
-          catch (err) { console.error("Answer error:", err) }
+          try { await pc.setRemoteDescription(new RTCSessionDescription(sdp)) } catch (err) {}
         }
       })
-      // NEW HANDLER: Safely processes batched ICE candidates
       .on('broadcast', { event: 'webrtc-ice-batch' }, async (payload) => {
         const { targetId, senderId, candidates } = payload.payload
         if (targetId !== currentUser.id) return
         const pc = peerConnections.current.get(senderId)
         if (pc) {
           for (const candidate of candidates) {
-            const applyCandidate = async () => {
-              try { await pc.addIceCandidate(new RTCIceCandidate(candidate)) }
-              catch (err) { console.error("ICE error:", err) }
-            }
+            const applyCandidate = async () => { try { await pc.addIceCandidate(new RTCIceCandidate(candidate)) } catch (err) {} }
             if (pc.remoteDescription) applyCandidate()
-            else setTimeout(applyCandidate, 1000) // Safely delay if remote definition isn't ready
+            else setTimeout(applyCandidate, 1000)
           }
         }
       })
       .on('broadcast', { event: 'user-left' }, (payload) => {
         const { id } = payload.payload
         if (!id || id === currentUser.id) return
-
         playersRef.current.delete(id)
         const pc = peerConnections.current.get(id)
         if (pc) pc.close()
         peerConnections.current.delete(id)
-        setRemoteStreams(prev => {
-          const next = { ...prev }
-          delete next[id]
-          return next
-        })
+        setRemoteStreams(prev => { const next = { ...prev }; delete next[id]; return next })
       })
       .subscribe(async (status: string) => {
         if (status === 'SUBSCRIBED') {
           isChannelJoined.current = true
           let me = playersRef.current.get(currentUser.id)
           if (!me) {
-            me = {
-              name: currentUser.name || 'You',
-              avatarColor: 'bg-blue-500',
-              avatar_url: currentUser.avatar_url,
-              targetX: 800, targetY: 450, renderX: 800, renderY: 450
-            }
+            me = { name: currentUser.name || 'You', avatarColor: 'bg-blue-500', avatar_url: currentUser.avatar_url, targetX: 800, targetY: 450, renderX: 800, renderY: 450 }
             playersRef.current.set(currentUser.id, me)
           }
           broadcastPosition(me.targetX, me.targetY, true)
@@ -562,43 +518,33 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
         }
       })
 
-
-
     return () => {
-      if (isChannelJoined.current) {
-        roomChannel.send({ type: 'broadcast', event: 'user-left', payload: { id: currentUser.id } })
-      }
+      if (isChannelJoined.current) roomChannel.send({ type: 'broadcast', event: 'user-left', payload: { id: currentUser.id } })
       isChannelJoined.current = false
       supabase.removeChannel(roomChannel)
     }
   }, [supabase, roomId, currentUser.id, currentUser.name, currentUser.avatar_url, broadcastPosition])
 
-  // Keep our own entry in sync if currentUser props change without a remount
-  // (Cache Components can preserve component state across client navigation)
   useEffect(() => {
     const me = playersRef.current.get(currentUser.id)
-    if (me) {
-      me.name = currentUser.name || me.name
-      me.avatar_url = currentUser.avatar_url
-    }
+    if (me) { me.name = currentUser.name || me.name; me.avatar_url = currentUser.avatar_url }
   }, [currentUser.id, currentUser.name, currentUser.avatar_url])
 
   useEffect(() => {
     const announceLeave = () => {
-      if (isChannelJoined.current && channelRef.current) {
-        channelRef.current.send({ type: 'broadcast', event: 'user-left', payload: { id: currentUser.id } })
-      }
+      if (isChannelJoined.current && channelRef.current) channelRef.current.send({ type: 'broadcast', event: 'user-left', payload: { id: currentUser.id } })
     }
     window.addEventListener('pagehide', announceLeave)
     return () => window.removeEventListener('pagehide', announceLeave)
   }, [currentUser.id])
 
+  // UPDATED Coordinates Logic: Accounts for the CSS transform scale!
   const getMapCoords = (e: React.MouseEvent | React.PointerEvent) => {
-    const rect = containerRef.current?.getBoundingClientRect()
+    const rect = mapBoardRef.current?.getBoundingClientRect()
     if (!rect) return { x: 0, y: 0 }
     return {
-      x: clamp((e.clientX - rect.left) / zoom - (offsetX / zoom), 0, MAP_WIDTH),
-      y: clamp((e.clientY - rect.top) / zoom - (offsetY / zoom), 0, MAP_HEIGHT)
+      x: clamp((e.clientX - rect.left) / fitScale, 0, MAP_WIDTH),
+      y: clamp((e.clientY - rect.top) / fitScale, 0, MAP_HEIGHT)
     }
   }
 
@@ -639,7 +585,6 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
     setDraftZone(null)
   }
 
-  // OPTIMIZATION 2: Smart Idle Heartbeat (Only sends if out of sync, checks every 3s)
   useEffect(() => {
     const intervalId = setInterval(() => {
       const me = playersRef.current.get(currentUser.id)
@@ -647,11 +592,7 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
         const dx = Math.abs(me.targetX - lastBroadcastPos.current.x)
         const dy = Math.abs(me.targetY - lastBroadcastPos.current.y)
         const timeSinceLast = Date.now() - lastBroadcastAt.current
-
-        // Broadcast if position has drifted from what server knows, OR force a strict 10s keep-alive
-        if (dx > 2 || dy > 2 || timeSinceLast > 10000) {
-          broadcastPosition(me.targetX, me.targetY, true)
-        }
+        if (dx > 2 || dy > 2 || timeSinceLast > 10000) broadcastPosition(me.targetX, me.targetY, true)
       }
     }, 3000)
     return () => clearInterval(intervalId)
@@ -664,8 +605,8 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
     const loop = (now: number) => {
       const dt = Math.min((now - lastTime) / 1000, 0.1)
       lastTime = now
-
       const me = playersRef.current.get(currentUser.id)
+      
       if (me) {
         const keys = pressedKeys.current
         let dx = 0, dy = 0
@@ -685,8 +626,7 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
           const { x: tx, y: ty } = clickTarget.current
           const dist = Math.hypot(tx - me.targetX, ty - me.targetY)
           if (dist < 2) {
-            me.targetX = tx; me.targetY = ty
-            clickTarget.current = null
+            me.targetX = tx; me.targetY = ty; clickTarget.current = null
           } else {
             const step = Math.min(GLIDE_SPEED * dt, dist)
             me.targetX += ((tx - me.targetX) / dist) * step
@@ -705,12 +645,7 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
         p.renderY += (p.targetY - p.renderY) * smoothing
       })
 
-      setUsers(
-        Array.from(playersRef.current.entries()).map(([id, p]) => ({
-          id, name: p.name, x: p.renderX, y: p.renderY, avatarColor: p.avatarColor, avatar_url: p.avatar_url
-        }))
-      )
-
+      setUsers(Array.from(playersRef.current.entries()).map(([id, p]) => ({ id, name: p.name, x: p.renderX, y: p.renderY, avatarColor: p.avatarColor, avatar_url: p.avatar_url })))
       rafId = requestAnimationFrame(loop)
     }
 
@@ -720,103 +655,50 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
 
   useEffect(() => {
     const audioEl = ambientAudioRef.current;
-
     if (ambientAudio && audioEl) {
       audioEl.volume = 0.2
-      audioEl.play()
-        .then(() => setIsAmbientPlaying(true))
-        .catch(() => {
-          console.log("Autoplay blocked by browser. User must interact first.")
-          setIsAmbientPlaying(false)
-        })
+      audioEl.play().then(() => setIsAmbientPlaying(true)).catch(() => setIsAmbientPlaying(false))
     }
-
-    return () => {
-      if (audioEl) {
-        audioEl.pause();
-        audioEl.currentTime = 0;
-      }
-    };
+    return () => { if (audioEl) { audioEl.pause(); audioEl.currentTime = 0; } }
   }, [ambientAudio]);
 
   const toggleAmbientAudio = (e: React.MouseEvent) => {
     e.stopPropagation()
     if (!ambientAudioRef.current) return
-
-    if (isAmbientPlaying) {
-      ambientAudioRef.current.pause()
-      setIsAmbientPlaying(false)
-    } else {
-      ambientAudioRef.current.play()
-      setIsAmbientPlaying(true)
-    }
+    if (isAmbientPlaying) { ambientAudioRef.current.pause(); setIsAmbientPlaying(false) } 
+    else { ambientAudioRef.current.play(); setIsAmbientPlaying(true) }
   }
 
   useEffect(() => {
     if (isChatOpen) {
-      if (chatCloseTimeout.current) {
-        clearTimeout(chatCloseTimeout.current)
-        chatCloseTimeout.current = null
-      }
+      if (chatCloseTimeout.current) { clearTimeout(chatCloseTimeout.current); chatCloseTimeout.current = null }
       setChatMounted(true)
       const raf = requestAnimationFrame(() => setChatEntered(true))
       return () => cancelAnimationFrame(raf)
     } else {
       setChatEntered(false)
       chatCloseTimeout.current = setTimeout(() => setChatMounted(false), CHAT_TRANSITION_MS)
-      return () => {
-        if (chatCloseTimeout.current) clearTimeout(chatCloseTimeout.current)
-      }
+      return () => { if (chatCloseTimeout.current) clearTimeout(chatCloseTimeout.current) }
     }
   }, [isChatOpen])
 
-  const me = users.find(u => u.id === currentUser.id) || { x: 800, y: 450 }
-  let offsetX = viewport.w > 0 ? (viewport.w / 2) - (me.x * zoom) : 0
-  let offsetY = viewport.h > 0 ? (viewport.h / 2) - (me.y * zoom) : 0
-  if (viewport.w > 0) {
-    const minX = Math.min(0, viewport.w - MAP_WIDTH * zoom)
-    offsetX = clamp(offsetX, minX, 0)
-  }
-  if (viewport.h > 0) {
-    const minY = Math.min(0, viewport.h - MAP_HEIGHT * zoom)
-    offsetY = clamp(offsetY, minY, 0)
-  }
-
-  const adjustZoom = (delta: number) => {
-    setZoom(prev => clamp(prev + delta, zoomBounds.min, zoomBounds.max))
-  }
-
-  const resetZoomToFit = () => setZoom(zoomBounds.cover)
-
   return (
-    <div className="flex w-full h-full relative items-center justify-center transition-all duration-300">
-      <div ref={containerRef} className="relative w-full h-full overflow-hidden bg-[#1E232B] shrink-0">
+    <div className="flex h-screen w-screen relative items-center justify-center overflow-hidden bg-[#050914] pt-16">
+      
+      {/* 1. Main Dynamic Size Container */}
+      <div ref={outerContainerRef} className="relative w-full h-full flex items-center justify-center">
 
+        {/* Floating Controls */}
         <div className="absolute right-6 top-6 flex flex-col gap-2 z-40 bg-gray-900/80 rounded-xl p-2 backdrop-blur-sm border border-gray-700/50">
           {currentUser.role === 'admin' && (
-            <>
-              <button
-                onClick={() => setIsEditingZones(!isEditingZones)}
-                title="Edit Audio Zones"
-                className={`p-2 rounded-lg transition-colors ${isEditingZones ? 'bg-yellow-500 text-black' : 'text-white hover:bg-gray-700'}`}
-              >
-                <RectangleGroupIcon className="w-6 h-6" />
-              </button>
-              <div className="h-px w-full bg-gray-700"></div>
-            </>
+            <button
+              onClick={() => setIsEditingZones(!isEditingZones)}
+              title="Edit Audio Zones"
+              className={`p-2 rounded-lg transition-colors ${isEditingZones ? 'bg-yellow-500 text-black' : 'text-white hover:bg-gray-700'}`}
+            >
+              <RectangleGroupIcon className="w-6 h-6" />
+            </button>
           )}
-
-          <button onClick={() => adjustZoom(0.2)} className="p-2 text-white hover:bg-gray-700 rounded-lg transition-colors">
-            <MagnifyingGlassPlusIcon className="w-6 h-6" />
-          </button>
-          <div className="h-px w-full bg-gray-700"></div>
-          <button onClick={() => adjustZoom(-0.2)} className="p-2 text-white hover:bg-gray-700 rounded-lg transition-colors">
-            <MagnifyingGlassMinusIcon className="w-6 h-6" />
-          </button>
-          <div className="h-px w-full bg-gray-700"></div>
-          <button onClick={resetZoomToFit} title="Fit to screen" className="p-2 text-[10px] font-semibold text-white hover:bg-gray-700 rounded-lg transition-colors">
-            FIT
-          </button>
         </div>
 
         <div className="absolute bottom-6 left-1/2 flex -translate-x-1/2 items-center gap-4 rounded-full border border-gray-700/50 bg-gray-900/80 px-6 py-3 shadow-xl backdrop-blur-sm z-40">
@@ -853,7 +735,7 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
 
         {chatMounted && (
           <div
-            className="absolute right-6 top-24 bottom-24 z-30"
+            className="absolute right-6 top-20 bottom-24 z-30"
             style={{
               transition: `opacity ${CHAT_TRANSITION_MS}ms ease-out, transform ${CHAT_TRANSITION_MS}ms ease-out`,
               opacity: chatEntered ? 1 : 0,
@@ -870,46 +752,77 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
           </div>
         )}
 
+        {/* 2. The Fixed, Scaled Map Board */}
         <div
-          className="absolute origin-top-left cursor-crosshair bg-center bg-no-repeat"
+          ref={mapBoardRef}
+          className="absolute origin-center overflow-hidden rounded-xl border border-gray-700 shadow-2xl cursor-crosshair bg-center bg-no-repeat"
           style={{
             width: `${MAP_WIDTH}px`,
             height: `${MAP_HEIGHT}px`,
-            backgroundColor: '#242B36',
+            transform: `scale(${fitScale})`,
+            backgroundColor: '#1E232B',
             backgroundImage: `radial-gradient(ellipse at center, rgba(255,255,255,0.04) 0%, rgba(0,0,0,0.15) 100%), url('${mapBackground}')`,
-            backgroundSize: '100% 100%, 100% 100%',
-            transform: `translate(${offsetX}px, ${offsetY}px) scale(${zoom})`,
-            willChange: 'transform'
+            backgroundSize: '100% 100%'
           }}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
         >
-          {zones.map((zone) => (
-            <div
-              key={zone.id}
-              className={`absolute border-2 transition-all ${isEditingZones ? 'border-dashed border-yellow-400 bg-yellow-400/20' : 'border-blue-400/30 bg-blue-400/10'}`}
-              style={{ left: zone.x, top: zone.y, width: zone.width, height: zone.height }}
-            >
-              <span className="absolute -top-6 left-0 rounded bg-black/60 px-2 py-1 text-xs font-bold text-white shadow-sm">
-                {zone.name}
-              </span>
-              {isEditingZones && (
-                <button
-                  // NEW: Stop the pointer event before it triggers the map's drawing tool
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    await deleteZone(zone.id);
-                    setZones(await getZones(roomId));
-                  }}
-                  className="absolute -top-6 right-0 rounded bg-red-600 p-1 text-white hover:bg-red-700"
-                >
-                  <TrashIcon className="h-4 w-4" />
-                </button>
-              )}
-            </div>
-          ))}
+          {zones.map((zone) => {
+            const isUserInZone = me.x >= zone.x && me.x <= zone.x + zone.width && me.y >= zone.y && me.y <= zone.y + zone.height;
+
+            return (
+              <div
+                key={zone.id}
+                className={`absolute border-2 transition-all ${isEditingZones ? 'border-dashed border-yellow-400 bg-yellow-400/20' : 'border-blue-400/30 bg-blue-400/10'}`}
+                style={{ left: zone.x, top: zone.y, width: zone.width, height: zone.height }}
+              >
+                <span className="absolute -top-6 left-0 flex items-center gap-1.5 rounded bg-black/60 px-2 py-1 text-xs font-bold text-white shadow-sm">
+                  {zone.name}
+                  {isUserInZone && isListening && (
+                    <span className="relative flex h-2 w-2" title="Transcribing to AI...">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75"></span>
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500"></span>
+                    </span>
+                  )}
+                </span>
+
+                {isEditingZones && (
+                  <button
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={async (e) => { e.stopPropagation(); await deleteZone(zone.id); setZones(await getZones(roomId)); }}
+                    className="absolute -top-6 right-0 rounded bg-red-600 p-1 text-white hover:bg-red-700"
+                  >
+                    <TrashIcon className="h-4 w-4" />
+                  </button>
+                )}
+
+                {!isEditingZones && (isUserInZone || currentUser.role === 'admin') && (
+                  <button
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => handleGenerateMinutes(e, zone.id, zone.name)}
+                    disabled={generatingZoneId === zone.id}
+                    className="absolute -bottom-10 right-0 z-30 flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-lg transition hover:from-purple-500 hover:to-blue-500 disabled:pointer-events-none disabled:opacity-70"
+                  >
+                    {generatingZoneId === zone.id ? (
+                      <>
+                        <svg className="h-3.5 w-3.5 animate-spin text-white" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Summarizing...
+                      </>
+                    ) : (
+                      <>
+                        <SparklesIcon className="h-3.5 w-3.5 text-yellow-300" />
+                        Generate Minutes
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+            )
+          })}
 
           {isEditingZones && draftZone && (
             <div
@@ -934,12 +847,19 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
               cameraActive={cameraActive}
               micActive={micActive}
               mediaError={mediaError}
-              zoom={zoom}
               videoRef={videoRef}
             />
           ))}
         </div>
       </div>
+
+      {activeMinutes && (
+        <MeetingMinutesModal
+          zoneName={activeMinutes.zoneName}
+          minutes={activeMinutes}
+          onClose={() => setActiveMinutes(null)}
+        />
+      )}
     </div>
   )
 }

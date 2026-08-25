@@ -4,7 +4,7 @@ import { useState, useTransition, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { updateEmployeeProfile } from './actions'
 import Link from 'next/link'
-import { UserCircleIcon } from '@heroicons/react/24/solid'
+import { UserCircleIcon, ArrowLeftIcon } from '@heroicons/react/24/solid'
 import { useRouter } from 'next/navigation'
 
 export default function SettingsPage() {
@@ -42,7 +42,6 @@ export default function SettingsPage() {
   }
 
   const handleSubmit = async (formData: FormData) => {
-    // Client-side validation before hitting the server
     if (password && password !== confirmPassword) {
       setMessage({ type: 'error', text: 'Passwords do not match.' })
       return
@@ -55,7 +54,6 @@ export default function SettingsPage() {
       
       if (result.success) {
         setProfile((prev: any) => ({ ...prev, display_name: displayName }))
-        // Clear password fields on success so they don't linger
         setPassword('')
         setConfirmPassword('')
         router.refresh()
@@ -63,42 +61,70 @@ export default function SettingsPage() {
     })
   }
 
-  if (loading) return <div className="min-h-screen bg-gray-50 p-8 flex justify-center items-center">Loading settings...</div>
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#050914]">
+        <svg className="h-8 w-8 animate-spin text-blue-500" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="mx-auto max-w-2xl">
-        <header className="mb-8 flex items-center justify-between border-b pb-4">
+    <div className="relative flex min-h-screen w-full justify-center overflow-hidden bg-[#050914] p-6 sm:p-12">
+      
+      {/* Ambient Background Glows */}
+      <div className="pointer-events-none absolute top-[-10%] left-[-10%] h-[600px] w-[600px] animate-[spin_15s_linear_infinite] rounded-full bg-blue-600/10 blur-[120px]" />
+      <div className="pointer-events-none absolute bottom-[-10%] right-[-10%] h-[500px] w-[500px] animate-[spin_20s_linear_infinite_reverse] rounded-full bg-purple-600/10 blur-[120px]" />
+
+      <div className="relative z-10 w-full max-w-2xl">
+        <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">My Settings</h1>
-            <p className="text-gray-600">Customize how you appear on the virtual map.</p>
+            <h1 className="text-3xl font-bold tracking-tight text-white">My Settings</h1>
+            <p className="mt-1 text-sm text-gray-400">Customize how you appear on the virtual map.</p>
           </div>
-          <Link href="/office" className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50">
+          <Link 
+            href="/office" 
+            className="flex w-fit items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/10"
+          >
+            <ArrowLeftIcon className="h-4 w-4" />
             Back to Office
           </Link>
         </header>
 
-        <div className="rounded-lg bg-white p-6 shadow-sm border">
+        {/* Frosted Glass Card */}
+        <div className="overflow-hidden rounded-3xl border border-white/10 bg-[#ffffff0a] p-6 shadow-[0_8px_32px_rgba(0,0,0,0.4)] backdrop-blur-2xl sm:p-10">
+          
           {message && (
-            <div className={`mb-6 rounded p-3 text-sm ${message.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+            <div className={`mb-8 rounded-xl border p-4 text-sm font-medium ${
+              message.type === 'success' 
+                ? 'border-green-500/20 bg-green-500/10 text-green-400' 
+                : 'border-red-500/20 bg-red-500/10 text-red-400'
+            }`}>
               {message.text}
             </div>
           )}
 
-          <form action={handleSubmit} className="flex flex-col gap-8">
+          <form action={handleSubmit} className="flex flex-col gap-10">
             
             {/* --- PROFILE SECTION --- */}
             <div className="flex flex-col gap-6">
-              <h2 className="text-lg font-semibold text-gray-800 border-b pb-2">Profile Information</h2>
+              <h2 className="border-b border-gray-800 pb-3 text-sm font-semibold uppercase tracking-wider text-gray-400">
+                Profile Information
+              </h2>
               
               <div>
-                <label className="mb-3 block text-sm font-medium text-gray-700">Profile Photo</label>
+                <label className="mb-4 block text-xs font-semibold uppercase tracking-wider text-gray-400">
+                  Profile Photo
+                </label>
                 <div className="flex items-center gap-6">
-                  <div className="h-24 w-24 overflow-hidden rounded-full border-2 border-gray-200 bg-gray-100 shadow-sm flex-shrink-0">
+                  <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-black/40 shadow-inner">
                     {previewImage ? (
                       <img src={previewImage} alt="Preview" className="h-full w-full object-cover" />
                     ) : (
-                      <UserCircleIcon className="h-full w-full text-gray-400 p-2" />
+                      <UserCircleIcon className="h-16 w-16 text-gray-600" />
                     )}
                   </div>
                   <div className="flex-1">
@@ -107,71 +133,89 @@ export default function SettingsPage() {
                       name="avatar"
                       accept="image/*"
                       onChange={handleImageChange}
-                      className="block w-full text-sm text-gray-500 file:mr-4 file:rounded-md file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-blue-700 hover:file:bg-blue-100"
+                      className="block w-full text-sm text-gray-400 file:mr-4 file:cursor-pointer file:rounded-xl file:border-0 file:bg-blue-600/20 file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-blue-400 transition hover:file:bg-blue-600/30"
                     />
-                    <p className="mt-2 text-xs text-gray-400">JPG, PNG or GIF. Max size 2MB.</p>
+                    <p className="mt-2.5 text-xs text-gray-500">JPG, PNG or GIF. Max size 2MB.</p>
                   </div>
                 </div>
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="display_name">
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-400" htmlFor="display_name">
                   Screen Name
                 </label>
                 <input
-                  className="w-full rounded-md border px-4 py-2 text-black focus:border-blue-500 focus:outline-none"
+                  id="display_name"
                   name="display_name"
                   type="text"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                   placeholder="e.g., Brian P."
+                  className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white shadow-inner outline-none transition-all placeholder:text-gray-600 focus:border-blue-500/50 focus:bg-black/40 focus:ring-4 focus:ring-blue-500/10"
                 />
-                <p className="mt-1 text-xs text-gray-400">This name will appear under your avatar on the map.</p>
+                <p className="mt-2 text-xs text-gray-500">This name will appear under your avatar on the map.</p>
               </div>
             </div>
 
             {/* --- SECURITY SECTION --- */}
-            <div className="flex flex-col gap-6 pt-4">
-              <h2 className="text-lg font-semibold text-gray-800 border-b pb-2">Security</h2>
+            <div className="flex flex-col gap-6">
+              <h2 className="border-b border-gray-800 pb-3 text-sm font-semibold uppercase tracking-wider text-gray-400">
+                Security
+              </h2>
               
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-6 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="password">
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-400" htmlFor="password">
                     New Password
                   </label>
                   <input
-                    className="w-full rounded-md border px-4 py-2 text-black focus:border-blue-500 focus:outline-none"
+                    id="password"
                     name="password"
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Leave blank to keep current"
+                    className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white shadow-inner outline-none transition-all placeholder:text-gray-600 focus:border-blue-500/50 focus:bg-black/40 focus:ring-4 focus:ring-blue-500/10"
                   />
                 </div>
                 
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="confirm_password">
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-400" htmlFor="confirm_password">
                     Confirm Password
                   </label>
                   <input
-                    className="w-full rounded-md border px-4 py-2 text-black focus:border-blue-500 focus:outline-none"
+                    id="confirm_password"
                     name="confirm_password"
                     type="password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="Confirm new password"
+                    className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white shadow-inner outline-none transition-all placeholder:text-gray-600 focus:border-blue-500/50 focus:bg-black/40 focus:ring-4 focus:ring-blue-500/10"
                   />
                 </div>
               </div>
             </div>
 
-            <button
-              type="submit"
-              disabled={isPending}
-              className="mt-2 w-full rounded-md bg-blue-600 px-4 py-2.5 font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
-            >
-              {isPending ? 'Saving...' : 'Save Changes'}
-            </button>
+            <div className="mt-4 border-t border-gray-800 pt-6">
+              <button
+                type="submit"
+                disabled={isPending}
+                className="flex w-full items-center justify-center rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-[0_0_15px_rgba(37,99,235,0.3)] transition-all duration-300 hover:bg-blue-500 hover:shadow-[0_0_25px_rgba(37,99,235,0.5)] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-70"
+              >
+                {isPending ? (
+                  <>
+                    <svg className="mr-2 h-4 w-4 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Saving Changes...
+                  </>
+                ) : (
+                  'Save Changes'
+                )}
+              </button>
+            </div>
+            
           </form>
         </div>
       </div>
