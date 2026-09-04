@@ -38,18 +38,18 @@ export default function MapNavigation({ accessibleMaps, currentMapId }: MapNavig
       {/* Active Map Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 rounded-md bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="flex items-center gap-2 rounded-xl border border-purple-200 bg-white/50 px-4 py-2 text-sm font-semibold text-purple-900 shadow-sm transition-all hover:bg-white hover:shadow-md focus:outline-none focus:ring-2 focus:ring-purple-500/30"
       >
-        <MapIcon className="h-5 w-5 text-blue-600" />
+        <MapIcon className="h-5 w-5 text-purple-600" />
         {currentMap.name}
-        <ChevronDownIcon className={`h-4 w-4 text-gray-500 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDownIcon className={`h-4 w-4 text-purple-400 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute left-0 mt-2 w-56 origin-top-left rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none z-50">
+        <div className="absolute left-0 mt-2 w-56 origin-top-left rounded-xl border border-purple-100 bg-white/95 shadow-[0_8px_32px_rgba(107,33,168,0.1)] backdrop-blur-2xl focus:outline-none z-50 overflow-hidden">
           <div className="py-1">
-            <div className="px-4 py-2 text-xs font-bold text-gray-400 uppercase tracking-wider border-b">
+            <div className="px-4 py-3 text-xs font-bold text-purple-400 uppercase tracking-wider border-b border-purple-50">
               Your Assigned Maps
             </div>
             
@@ -66,12 +66,12 @@ export default function MapNavigation({ accessibleMaps, currentMapId }: MapNavig
                   onClick={() => setIsOpen(false)}
                   className={`block px-4 py-3 text-sm transition-colors ${
                     isActive 
-                      ? 'bg-blue-50 text-blue-700 font-semibold cursor-default pointer-events-none' 
-                      : 'text-gray-700 hover:bg-gray-100'
+                      ? 'bg-purple-50 text-purple-800 font-semibold cursor-default pointer-events-none border-l-2 border-purple-500' 
+                      : 'text-gray-600 hover:bg-purple-50 hover:text-purple-900'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <div className={`h-2 w-2 rounded-full ${isActive ? 'bg-blue-500' : 'bg-gray-300'}`}></div>
+                    <div className={`h-2 w-2 rounded-full ${isActive ? 'bg-purple-500 shadow-[0_0_5px_rgba(168,85,247,0.5)]' : 'bg-purple-200'}`}></div>
                     {mapDetails.name}
                   </div>
                 </Link>

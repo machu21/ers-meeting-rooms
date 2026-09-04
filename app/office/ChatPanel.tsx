@@ -28,7 +28,7 @@ export default function ChatPanel({ roomId, currentUser, allUsers, onClose }: Ch
 
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState('')
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   // NEW: Notification States and Refs to track current view without re-triggering useEffects
   const [unreadGroup, setUnreadGroup] = useState(false)
@@ -113,7 +113,9 @@ export default function ChatPanel({ roomId, currentUser, allUsers, onClose }: Ch
 
   // Auto-scroll
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
+    }
   }, [messages, activeTab, selectedDmUser])
 
   // 3. Send Message Handler
@@ -143,27 +145,27 @@ export default function ChatPanel({ roomId, currentUser, allUsers, onClose }: Ch
   const otherUsers = allUsers.filter(u => u.id !== currentUser.id)
 
   return (
-    <div className="flex h-[min(600px,70vh)] w-80 flex-col overflow-hidden rounded-2xl border border-gray-700/50 bg-gray-900/90 shadow-2xl backdrop-blur-md shrink-0">
+    <div className="flex h-[min(600px,70vh)] w-80 flex-col overflow-hidden rounded-2xl border border-purple-100 bg-white/60 shadow-[0_8px_32px_rgba(107,33,168,0.05)] backdrop-blur-2xl shrink-0">
 
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-gray-700/50 bg-gray-900/60 px-4 py-3">
-        <h3 className="text-sm font-semibold tracking-wide text-white">Office Chat</h3>
+      <div className="flex items-center justify-between border-b border-purple-100 bg-white/40 px-4 py-3">
+        <h3 className="text-sm font-semibold tracking-wide text-purple-900 drop-shadow-sm">Office Chat</h3>
         <button
           onClick={onClose}
-          className="rounded-lg p-1.5 text-gray-400 transition hover:bg-gray-700/60 hover:text-white"
+          className="rounded-lg p-1.5 text-gray-500 transition hover:bg-purple-100/50 hover:text-purple-700 active:scale-95"
         >
           <XMarkIcon className="h-4 w-4" />
         </button>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-700/50 bg-gray-900/40 px-2 pt-2">
+      <div className="flex gap-1 border-b border-purple-100 bg-white/40 px-2 pt-2">
         <button
           onClick={() => setActiveTab('group')}
           className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-t-lg py-2 text-xs font-medium transition ${
             activeTab === 'group'
-              ? 'bg-gray-800/80 text-blue-400 border-b-2 border-blue-500'
-              : 'text-gray-400 hover:text-gray-200'
+              ? 'bg-white text-purple-700 border-b-2 border-purple-500 shadow-sm drop-shadow-sm'
+              : 'text-gray-500 hover:text-purple-700 hover:bg-purple-50/50'
           }`}
         >
           <UserGroupIcon className="h-3.5 w-3.5" />
@@ -182,8 +184,8 @@ export default function ChatPanel({ roomId, currentUser, allUsers, onClose }: Ch
           onClick={() => setActiveTab('direct')}
           className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-t-lg py-2 text-xs font-medium transition ${
             activeTab === 'direct'
-              ? 'bg-gray-800/80 text-blue-400 border-b-2 border-blue-500'
-              : 'text-gray-400 hover:text-gray-200'
+              ? 'bg-white text-purple-700 border-b-2 border-purple-500 shadow-sm drop-shadow-sm'
+              : 'text-gray-500 hover:text-purple-700 hover:bg-purple-50/50'
           }`}
         >
           <UserIcon className="h-3.5 w-3.5" />
@@ -201,9 +203,9 @@ export default function ChatPanel({ roomId, currentUser, allUsers, onClose }: Ch
 
       {/* DM User Selector */}
       {activeTab === 'direct' && (
-        <div className="border-b border-gray-700/50 bg-gray-900/40 p-2">
+        <div className="border-b border-purple-100 bg-white/40 p-2">
           <select
-            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-2 py-1.5 text-xs text-gray-200 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-full rounded-lg border border-purple-100 bg-white/80 px-2 py-1.5 text-xs text-gray-800 focus:border-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-200"
             value={selectedDmUser || ''}
             onChange={(e) => {
               setSelectedDmUser(e.target.value)
@@ -223,7 +225,7 @@ export default function ChatPanel({ roomId, currentUser, allUsers, onClose }: Ch
       )}
 
       {/* Message List */}
-      <div className="flex-1 space-y-3 overflow-y-auto p-3 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+      <div ref={scrollContainerRef} className="flex-1 space-y-3 overflow-y-auto p-3 scrollbar-thin scrollbar-thumb-purple-200 scrollbar-track-transparent">
         {activeTab === 'direct' && !selectedDmUser ? (
           <div className="mt-10 text-center text-xs text-gray-500">Select someone to start chatting.</div>
         ) : displayedMessages.length === 0 ? (
@@ -235,13 +237,13 @@ export default function ChatPanel({ roomId, currentUser, allUsers, onClose }: Ch
               return (
                 <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                   {!isMe && activeTab === 'group' && (
-                    <span className="mb-0.5 px-1 text-[10px] font-medium text-gray-500">{msg.sender_name}</span>
+                    <span className="mb-0.5 px-1 text-[10px] font-medium text-purple-600/70">{msg.sender_name}</span>
                   )}
                   <div
                     className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-snug ${
                       isMe
-                        ? 'rounded-br-sm bg-blue-600 text-white'
-                        : 'rounded-bl-sm border border-gray-700/60 bg-gray-800 text-gray-100'
+                        ? 'rounded-br-sm bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-md'
+                        : 'rounded-bl-sm border border-purple-100 bg-white text-gray-800 shadow-sm backdrop-blur-sm'
                     }`}
                   >
                     {msg.content}
@@ -249,20 +251,19 @@ export default function ChatPanel({ roomId, currentUser, allUsers, onClose }: Ch
                 </div>
               )
             })}
-            <div ref={messagesEndRef} />
           </>
         )}
       </div>
 
       {/* Input Area */}
-      <form onSubmit={sendMessage} className="border-t border-gray-700/50 bg-gray-900/60 p-3">
+      <form onSubmit={sendMessage} className="border-t border-purple-100 bg-white/40 p-3">
         <input
           type="text"
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           placeholder="Type a message..."
           disabled={activeTab === 'direct' && !selectedDmUser}
-          className="w-full rounded-full border border-gray-700 bg-gray-800 px-4 py-2 text-sm text-white placeholder-gray-500 transition focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-40"
+          className="w-full rounded-full border border-purple-100 bg-white px-4 py-2 text-sm text-gray-900 placeholder-gray-400 shadow-inner transition focus:border-purple-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-200 disabled:opacity-40"
         />
       </form>
     </div>

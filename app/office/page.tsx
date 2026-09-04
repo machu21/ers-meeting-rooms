@@ -3,7 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import VirtualMap from './VirtualMap'
-import MapNavigation from './MapNavigation' 
+import LiveKitRoomWrapper from './LiveKitRoomWrapper'
+import MapNavigation from './MapNavigation'
 
 
 
@@ -49,24 +50,29 @@ async function OfficeContent() {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-gray-100">
-      <header className="flex items-center justify-between bg-white p-4 shadow-sm border-b z-20">
+    <div className="relative flex h-screen flex-col bg-gradient-to-br from-white via-purple-50 to-purple-100 overflow-hidden">
+      
+      {/* --- ANIMATED AMBIENT BACKGROUND --- */}
+      <div className="pointer-events-none absolute top-[-10%] left-[-10%] h-[600px] w-[600px] animate-[spin_15s_linear_infinite] rounded-full bg-purple-300/30 blur-[120px] z-0" />
+      <div className="pointer-events-none absolute bottom-[-10%] right-[-10%] h-[500px] w-[500px] animate-[spin_20s_linear_infinite_reverse] rounded-full bg-fuchsia-300/30 blur-[120px] z-0" />
+
+      <header className="relative z-20 flex items-center justify-between border-b border-white/60 bg-white/40 p-4 shadow-[0_4px_30px_rgba(107,33,168,0.05)] backdrop-blur-xl">
 
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-3">
-            <h1 className="text-xl font-bold text-gray-800">Elevate Remote Office</h1>
-            <span className="rounded bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-800 uppercase tracking-wider">
+            <h1 className="text-xl font-bold tracking-tight text-purple-900 drop-shadow-sm">Elevate Remote Office</h1>
+            <span className="rounded-full bg-purple-100 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-purple-700 border border-purple-200">
               {userRole}
             </span>
             {userRole === 'admin' && (
-              <span className="rounded bg-gray-800 px-2 py-1 text-xs font-semibold text-white uppercase tracking-wider">
+              <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-red-700 border border-red-200">
                 Ghost Mode
               </span>
             )}
           </div>
 
           {/* Vertical Divider */}
-          <div className="h-6 w-px bg-gray-300"></div>
+          <div className="h-6 w-px bg-purple-200"></div>
 
           {/* The New Map Navigation Dropdown */}
           <MapNavigation
@@ -77,30 +83,32 @@ async function OfficeContent() {
 
         <div className="flex items-center gap-4">
           {(userRole === 'supervisor' || userRole === 'admin') && (
-            <Link href="/dashboard" className="text-sm font-medium text-blue-600 hover:text-blue-800">
+            <Link href="/dashboard" className="text-sm font-medium text-purple-700 transition hover:text-purple-900">
               Admin Dashboard
             </Link>
           )}
 
           {/* NEW: Settings Link for everyone */}
-          <Link href="/settings" className="text-sm font-medium text-gray-600 hover:text-gray-900">
+          <Link href="/settings" className="text-sm font-medium text-purple-600 transition hover:text-purple-900">
             Settings
           </Link>
 
           <form action={signOut}>
-            <button className="rounded bg-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-300">
+            <button className="rounded-xl border border-purple-200 bg-white/50 px-4 py-2 text-sm font-semibold text-purple-900 shadow-sm transition-all hover:bg-white hover:shadow-md active:scale-95">
               Sign Out
             </button>
           </form>
         </div>
       </header>
 
-      <main className="relative flex flex-1 items-center justify-center bg-gray-800 overflow-hidden p-8">
-        <VirtualMap
-          currentUser={currentUserData}
-          roomId="office_room_1"
-          mapBackground="/office.jfif"
-        />
+      <main className="relative z-10 flex flex-1 items-center justify-center overflow-hidden">
+        <LiveKitRoomWrapper roomId="office_room_1" currentUser={currentUserData}>
+          <VirtualMap
+            currentUser={currentUserData}
+            roomId="office_room_1"
+            mapBackground="/office.jfif"
+          />
+        </LiveKitRoomWrapper>
       </main>
     </div>
   )
@@ -108,7 +116,7 @@ async function OfficeContent() {
 
 export default function OfficePage() {
   return (
-    <Suspense fallback={<div className="flex h-screen w-full items-center justify-center bg-gray-100 text-gray-600 font-medium">Loading office space...</div>}>
+    <Suspense fallback={<div className="flex h-screen w-full items-center justify-center bg-[#050914] text-gray-400 font-medium">Loading virtual space...</div>}>
       <OfficeContent />
     </Suspense>
   )

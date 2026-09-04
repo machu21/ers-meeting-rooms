@@ -15,7 +15,7 @@ export async function generateMeetingMinutes(zoneId: string) {
 
   // 2. Fetch the raw transcripts for this zone (limit to the last 2 hours)
   const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
-  
+
   const { data: transcripts, error: fetchError } = await supabase
     .from('transcripts')
     .select('user_name, content, created_at')
@@ -33,7 +33,7 @@ export async function generateMeetingMinutes(zoneId: string) {
 
   // 4. Prompt Gemini 1.5 Flash (Fast, cheap, and excellent at JSON formatting)
   const model = genAI.getGenerativeModel({ model: "gemini-3.7-flash" })
-  
+
   const prompt = `
     You are an expert executive assistant. Below is a raw, unedited voice-to-text transcript of a meeting.
     It may contain typos, filler words, or repeated phrases due to speech recognition limitations.
@@ -52,7 +52,7 @@ export async function generateMeetingMinutes(zoneId: string) {
   try {
     const result = await model.generateContent(prompt)
     const responseText = result.response.text().trim()
-    
+
     // Safety check: strip any accidental markdown formatting the LLM might have included
     const cleanJsonString = responseText.replace(/^```json/i, '').replace(/```$/i, '').trim()
     const parsedData = JSON.parse(cleanJsonString)

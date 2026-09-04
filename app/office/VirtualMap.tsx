@@ -13,9 +13,12 @@ import {
   SpeakerXMarkIcon,
   RectangleGroupIcon,
   TrashIcon,
-  SparklesIcon
+  SparklesIcon,
+  TvIcon
 } from '@heroicons/react/24/solid'
 import ChatPanel from './ChatPanel'
+import ScreenShareViewer from './ScreenShareViewer'
+import { useLocalParticipant } from '@livekit/components-react'
 
 type MapUser = {
   id: string
@@ -133,9 +136,9 @@ const MapAvatar = ({
   const showVideo = (isMe && cameraActive && !mediaError) || hasRemoteStream
 
   const ringClass = isSpeaking
-    ? 'ring-4 ring-green-500 shadow-[0_0_15px_rgba(34,197,94,0.6)]'
+    ? 'ring-4 ring-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.8)]'
     : showVideo
-      ? 'ring-4 ring-blue-400/50'
+      ? 'ring-4 ring-purple-400/50'
       : ''
 
   const isGhost = isMe && currentUserRole === 'admin'
@@ -249,6 +252,37 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
 
   const me = users.find(u => u.id === currentUser.id) || { x: 800, y: 450, id: currentUser.id, name: currentUser.name, avatarColor: 'bg-blue-500' }
   const myCurrentZone = zones.find(z => me.x >= z.x && me.x <= z.x + z.width && me.y >= z.y && me.y <= z.y + z.height)
+
+  const { localParticipant } = useLocalParticipant()
+  const [screenShareActive, setScreenShareActive] = useState(false)
+  
+  // Calculate users in the same zone for screen share filtering
+  const usersInMyZone = users.filter(u => 
+    myCurrentZone &&
+    u.x >= myCurrentZone.x && u.x <= myCurrentZone.x + myCurrentZone.width &&
+    u.y >= myCurrentZone.y && u.y <= myCurrentZone.y + myCurrentZone.height
+  ).map(u => u.id)
+
+  // Turn off screen share if user leaves the zone
+  useEffect(() => {
+    if (!myCurrentZone && screenShareActive && localParticipant) {
+      localParticipant.setScreenShareEnabled(false).catch(console.error)
+      setScreenShareActive(false)
+    }
+  }, [myCurrentZone, screenShareActive, localParticipant])
+
+  const toggleScreenShare = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!localParticipant) return
+    try {
+      const isSharing = !screenShareActive
+      await localParticipant.setScreenShareEnabled(isSharing)
+      setScreenShareActive(isSharing)
+    } catch (error) {
+      console.error('Failed to toggle screen share', error)
+      setScreenShareActive(false) // Revert on failure or cancel
+    }
+  }
 
   const recognitionRef = useRef<any>(null)
   const [isListening, setIsListening] = useState(false)
@@ -368,13 +402,17 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
     const MOVE_KEYS = new Set(['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd'])
     const handleKeyDown = (e: KeyboardEvent) => {
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return
+      if (!e.key) return
       const key = e.key.toLowerCase()
       if (!MOVE_KEYS.has(key)) return
       e.preventDefault()
       clickTarget.current = null
       pressedKeys.current.add(key)
     }
-    const handleKeyUp = (e: KeyboardEvent) => pressedKeys.current.delete(e.key.toLowerCase())
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (!e.key) return
+      pressedKeys.current.delete(e.key.toLowerCase())
+    }
     const handleBlur = () => pressedKeys.current.clear()
 
     window.addEventListener('keydown', handleKeyDown)
@@ -683,49 +721,65 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
   }, [isChatOpen])
 
   return (
-    <div className="flex h-screen w-screen relative items-center justify-center overflow-hidden bg-[#050914] pt-16">
+    <div className="flex h-full w-full relative items-center justify-center overflow-hidden bg-transparent">
       
       {/* 1. Main Dynamic Size Container */}
       <div ref={outerContainerRef} className="relative w-full h-full flex items-center justify-center">
 
+        <ScreenShareViewer 
+          currentZoneId={myCurrentZone?.id}
+          usersInCurrentZone={usersInMyZone}
+          currentUserId={currentUser.id}
+        />
+
         {/* Floating Controls */}
-        <div className="absolute right-6 top-6 flex flex-col gap-2 z-40 bg-gray-900/80 rounded-xl p-2 backdrop-blur-sm border border-gray-700/50">
+        <div className="absolute right-6 top-6 flex flex-col gap-2 z-40 bg-white/60 rounded-xl p-2 backdrop-blur-2xl border border-purple-100 shadow-[0_8px_32px_rgba(107,33,168,0.05)]">
           {currentUser.role === 'admin' && (
             <button
               onClick={() => setIsEditingZones(!isEditingZones)}
               title="Edit Audio Zones"
-              className={`p-2 rounded-lg transition-colors ${isEditingZones ? 'bg-yellow-500 text-black' : 'text-white hover:bg-gray-700'}`}
+              className={`p-2 rounded-lg transition-colors ${isEditingZones ? 'bg-yellow-500 text-white shadow-md' : 'text-purple-600 hover:bg-purple-100 hover:text-purple-900'}`}
             >
               <RectangleGroupIcon className="w-6 h-6" />
             </button>
           )}
         </div>
 
-        <div className="absolute bottom-6 left-1/2 flex -translate-x-1/2 items-center gap-4 rounded-full border border-gray-700/50 bg-gray-900/80 px-6 py-3 shadow-xl backdrop-blur-sm z-40">
-          <button onClick={(e) => { e.stopPropagation(); setCameraActive(!cameraActive) }} className={`rounded-full p-3 transition-colors duration-200 ${cameraActive ? 'bg-gray-700 text-white hover:bg-gray-600' : 'bg-red-500 text-white hover:bg-red-600'}`}>
+        <div className="absolute bottom-6 left-1/2 flex -translate-x-1/2 items-center gap-4 rounded-full border border-purple-100 bg-white/60 px-6 py-3 shadow-[0_8px_32px_rgba(107,33,168,0.05)] backdrop-blur-2xl z-40">
+          <button onClick={(e) => { e.stopPropagation(); setCameraActive(!cameraActive) }} className={`rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 ${cameraActive ? 'bg-purple-600 text-white shadow-[0_0_15px_rgba(147,51,234,0.3)]' : 'bg-white text-gray-500 shadow-sm hover:bg-purple-50 hover:text-purple-700'}`}>
             <VideoCameraIcon className="h-6 w-6" />
           </button>
 
           {disableMic ? (
-            <button disabled title="Microphones are disabled in this room" className="rounded-full p-3 bg-gray-800 text-gray-500 cursor-not-allowed">
-              <MicrophoneIcon className="h-6 w-6 opacity-50" />
+            <button disabled title="Microphones are disabled in this room" className="rounded-full p-3 bg-gray-100 text-gray-400 cursor-not-allowed shadow-inner">
+              <MicrophoneIcon className="h-6 w-6" />
             </button>
           ) : (
-            <button onClick={(e) => { e.stopPropagation(); setMicActive(!micActive) }} className={`rounded-full p-3 transition-colors duration-200 ${micActive ? 'bg-gray-700 text-white hover:bg-gray-600' : 'bg-red-500 text-white hover:bg-red-600'}`}>
+            <button onClick={(e) => { e.stopPropagation(); setMicActive(!micActive) }} className={`rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 ${micActive ? 'bg-purple-600 text-white shadow-[0_0_15px_rgba(147,51,234,0.3)]' : 'bg-white text-gray-500 shadow-sm hover:bg-purple-50 hover:text-purple-700'}`}>
               <MicrophoneIcon className="h-6 w-6" />
             </button>
           )}
 
-          <div className="mx-2 h-8 w-px bg-gray-600"></div>
+          {!myCurrentZone ? (
+            <button disabled title="You must be in a zone to share screen" className="rounded-full p-3 bg-gray-100 text-gray-400 cursor-not-allowed shadow-inner">
+              <TvIcon className="h-6 w-6" />
+            </button>
+          ) : (
+            <button onClick={toggleScreenShare} className={`rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 ${screenShareActive ? 'bg-purple-600 text-white shadow-[0_0_15px_rgba(147,51,234,0.3)]' : 'bg-white text-gray-500 shadow-sm hover:bg-purple-50 hover:text-purple-700'}`}>
+              <TvIcon className="h-6 w-6" />
+            </button>
+          )}
 
-          <button onClick={(e) => { e.stopPropagation(); setIsChatOpen(!isChatOpen) }} className={`rounded-full p-3 transition-colors duration-200 ${isChatOpen ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-gray-700 text-white hover:bg-gray-600'}`}>
+          <div className="mx-2 h-8 w-px bg-purple-100"></div>
+
+          <button onClick={(e) => { e.stopPropagation(); setIsChatOpen(!isChatOpen) }} className={`rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 ${isChatOpen ? 'bg-purple-600 text-white shadow-[0_0_15px_rgba(147,51,234,0.3)]' : 'bg-white text-gray-500 shadow-sm hover:bg-purple-50 hover:text-purple-700'}`}>
             <ChatBubbleLeftRightIcon className="h-6 w-6" />
           </button>
 
           {ambientAudio && (
             <>
-              <div className="mx-2 h-8 w-px bg-gray-600"></div>
-              <button onClick={toggleAmbientAudio} title="Toggle Room Audio" className={`rounded-full p-3 transition-colors duration-200 ${isAmbientPlaying ? 'bg-indigo-500 text-white hover:bg-indigo-400' : 'bg-gray-700 text-white hover:bg-gray-600'}`}>
+              <div className="mx-2 h-8 w-px bg-purple-100"></div>
+              <button onClick={toggleAmbientAudio} title="Toggle Room Audio" className={`rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 ${isAmbientPlaying ? 'bg-purple-600 text-white shadow-[0_0_15px_rgba(147,51,234,0.3)]' : 'bg-white text-gray-500 shadow-sm hover:bg-purple-50 hover:text-purple-700'}`}>
                 {isAmbientPlaying ? <SpeakerWaveIcon className="h-6 w-6" /> : <SpeakerXMarkIcon className="h-6 w-6" />}
               </button>
               <audio ref={ambientAudioRef} src={ambientAudio} loop className="hidden" preload="auto" />
