@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, memo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import MeetingMinutesModal from './MeetingMinutesModal'
 import { generateMeetingMinutes, getLatestMeetingMinutes, saveTranscript } from './ai-actions'
@@ -60,11 +60,11 @@ const MAP_HEIGHT = 900
 const AVATAR_RADIUS = 24
 const MOVE_SPEED = 260
 const GLIDE_SPEED = 340
-const BROADCAST_INTERVAL = 150
+const BROADCAST_INTERVAL = 300 // Tuned for 8hr demo: ~50% less Realtime messages vs 150ms
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(v, max))
 
-// 1. Audio Analyzer Hook
+// 1. Audio Analyzer Hook with Throttled State Updates
 function useVolumeLevel(stream: MediaStream | null) {
   const [volume, setVolume] = useState(0)
 
@@ -73,7 +73,10 @@ function useVolumeLevel(stream: MediaStream | null) {
       setVolume(0)
       return
     }
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+    const AudioContextClass = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!AudioContextClass) return
+
+    const audioContext = new AudioContextClass()
     const analyser = audioContext.createAnalyser()
     analyser.fftSize = 256
     const source = audioContext.createMediaStreamSource(stream)
@@ -81,37 +84,45 @@ function useVolumeLevel(stream: MediaStream | null) {
 
     const dataArray = new Uint8Array(analyser.frequencyBinCount)
     let animationFrameId: number
+    let lastVolumeUpdate = 0
 
-    const updateVolume = () => {
-      analyser.getByteFrequencyData(dataArray)
-      let sum = 0
-      for (let i = 0; i < dataArray.length; i++) sum += dataArray[i]
-      setVolume(sum / dataArray.length)
+    const updateVolume = (timestamp: number) => {
+      // Throttle state updates to ~12 FPS (80ms)
+      if (timestamp - lastVolumeUpdate > 80) {
+        lastVolumeUpdate = timestamp
+        analyser.getByteFrequencyData(dataArray)
+        let sum = 0
+        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i]
+        const avg = sum / dataArray.length
+        setVolume(prev => (Math.abs(prev - avg) > 4 ? avg : prev))
+      }
       animationFrameId = requestAnimationFrame(updateVolume)
     }
-    updateVolume()
+    animationFrameId = requestAnimationFrame(updateVolume)
     return () => {
       cancelAnimationFrame(animationFrameId)
       source.disconnect()
       analyser.disconnect()
-      audioContext.close()
+      audioContext.close().catch(() => {})
     }
   }, [stream])
   return volume
 }
 
-const RemoteMedia = ({ stream }: { stream: MediaStream }) => {
+const RemoteMedia = memo(({ stream }: { stream: MediaStream }) => {
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement>(null)
   useEffect(() => { if (mediaRef.current) mediaRef.current.srcObject = stream }, [stream])
   const hasVideo = stream.getVideoTracks().length > 0
   if (hasVideo) return <video ref={mediaRef as React.RefObject<HTMLVideoElement>} autoPlay playsInline className="h-full w-full object-cover" />
   else return <audio ref={mediaRef as React.RefObject<HTMLAudioElement>} autoPlay playsInline className="hidden" />
-}
+})
+RemoteMedia.displayName = 'RemoteMedia'
 
-const MapAvatar = ({
+const MapAvatar = memo(({
   user,
   isMe,
-  currentUserRole,
+  isInZone,
+  currentUserRole: _currentUserRole,
   localStream,
   remoteStream,
   cameraActive,
@@ -121,6 +132,7 @@ const MapAvatar = ({
 }: {
   user: MapUser
   isMe: boolean
+  isInZone: boolean
   currentUserRole: string
   localStream: MediaStream | null
   remoteStream?: MediaStream
@@ -142,7 +154,7 @@ const MapAvatar = ({
       ? 'ring-4 ring-purple-400/50'
       : ''
 
-  const isGhost = false // Admins are no longer ghosts so they can be seen on camera
+  const isGhost = false
 
   return (
     <div
@@ -153,7 +165,7 @@ const MapAvatar = ({
         transformOrigin: 'top center'
       }}
     >
-      {isMe && !isGhost && (
+      {isMe && !isGhost && !isInZone && (
         <div
           className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-blue-400/30 bg-blue-400/10 pointer-events-none"
           style={{ width: `${PROXIMITY_RADIUS * 2}px`, height: `${PROXIMITY_RADIUS * 2}px` }}
@@ -179,7 +191,8 @@ const MapAvatar = ({
       </div>
     </div>
   )
-}
+})
+MapAvatar.displayName = 'MapAvatar'
 
 type PlayerMeta = { name: string; avatarColor: string; avatar_url?: string | null; targetX: number; targetY: number; renderX: number; renderY: number }
 type Zone = { id: string; name: string; x: number; y: number; width: number; height: number }
@@ -238,7 +251,7 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
   const isChannelJoined = useRef(false)
 
-  const iceCandidatesBuffer = useRef<{ [targetId: string]: any[] }>({})
+  const iceCandidatesBuffer = useRef<{ [targetId: string]: RTCIceCandidateInit[] }>({})
   const iceFlushTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const playersRef = useRef<Map<string, PlayerMeta>>(
@@ -287,7 +300,17 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
     }
   }
 
-  const recognitionRef = useRef<any>(null)
+  // Minimal local type for the Web Speech API (not in TS lib by default)
+  type SpeechRec = {
+    continuous: boolean
+    interimResults: boolean
+    lang: string
+    onresult: ((e: { results: { [i: number]: { [j: number]: { transcript: string } } }; resultIndex: number }) => void) | null
+    onend: (() => void) | null
+    start(): void
+    stop(): void
+  }
+  const recognitionRef = useRef<SpeechRec | null>(null)
   const [isListening, setIsListening] = useState(false)
   const myZoneRef = useRef<Zone | undefined>(myCurrentZone)
   const micActiveRef = useRef<boolean>(micActive)
@@ -296,15 +319,17 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
   useEffect(() => { micActiveRef.current = micActive }, [micActive])
 
   useEffect(() => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!SpeechRecognition) return
+    type SpeechRecCtor = new () => SpeechRec
+    const win = window as Window & { SpeechRecognition?: SpeechRecCtor; webkitSpeechRecognition?: SpeechRecCtor }
+    const SpeechRecognitionAPI = win.SpeechRecognition || win.webkitSpeechRecognition
+    if (!SpeechRecognitionAPI) return
 
-    const recognition = new SpeechRecognition()
+    const recognition = new SpeechRecognitionAPI()
     recognition.continuous = true
     recognition.interimResults = false
     recognition.lang = 'en-US'
 
-    recognition.onresult = async (event: any) => {
+    recognition.onresult = async (event) => {
       const currentZone = myZoneRef.current
       if (currentZone && micActiveRef.current) {
         const transcript = event.results[event.resultIndex][0].transcript.trim()
@@ -314,7 +339,7 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
 
     recognition.onend = () => {
       if (myZoneRef.current && micActiveRef.current) {
-        try { recognition.start() } catch (e) {}
+        try { recognition.start() } catch (_e) {}
       } else {
         setIsListening(false)
       }
@@ -327,14 +352,13 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
     if (!recognitionRef.current) return
     const shouldListen = !!myCurrentZone && micActive
     if (shouldListen && !isListening) {
-      try { recognitionRef.current.start(); setIsListening(true) } catch(e) {}
+      try { recognitionRef.current.start(); setIsListening(true) } catch(_e) {}
     } else if (!shouldListen && isListening) {
-      try { recognitionRef.current.stop(); setIsListening(false) } catch(e) {}
+      try { recognitionRef.current.stop(); setIsListening(false) } catch(_e) {}
     }
   }, [myCurrentZone, micActive, isListening])
 
   const broadcastPosition = useCallback((x: number, y: number, force = false) => {
-    if (currentUser.role === 'admin') return
     if (!isChannelJoined.current) return
 
     const now = Date.now()
@@ -347,7 +371,7 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
       event: 'cursor-move',
       payload: { id: currentUser.id, name: currentUser.name, avatar_url: currentUser.avatar_url, avatarColor: 'bg-indigo-500', x, y }
     })
-  }, [currentUser.id, currentUser.name, currentUser.avatar_url, currentUser.role])
+  }, [currentUser.id, currentUser.name, currentUser.avatar_url])
 
   // Resize Observer for Fixed Map Scaling
   useEffect(() => {
@@ -366,40 +390,48 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
 
   useEffect(() => { getZones(roomId).then(setZones) }, [roomId])
 
+  // Throttled WebRTC Proximity Check (Decoupled from 60FPS render loop)
   useEffect(() => {
-    const me = users.find(u => u.id === currentUser.id)
-    if (!me) return
+    const checkProximity = async () => {
+      const me = playersRef.current.get(currentUser.id)
+      if (!me) return
 
-    const getUserZone = (ux: number, uy: number) => zones.find(z => ux >= z.x && ux <= z.x + z.width && uy >= z.y && uy <= z.y + z.height)
-    const myZone = getUserZone(me.x, me.y)
+      const getUserZone = (ux: number, uy: number) => zones.find(z => ux >= z.x && ux <= z.x + z.width && uy >= z.y && uy <= z.y + z.height)
+      const myZone = getUserZone(me.renderX, me.renderY)
 
-    users.forEach(async (otherUser) => {
-      if (otherUser.id === currentUser.id) return
-      const theirZone = getUserZone(otherUser.x, otherUser.y)
-      const distance = Math.hypot(otherUser.x - me.x, otherUser.y - me.y)
-      const hasConnection = peerConnections.current.has(otherUser.id)
+      const others = Array.from(playersRef.current.entries()).filter(([id]) => id !== currentUser.id)
 
-      const isSameZone = myZone && theirZone && myZone.id === theirZone.id
-      const shouldConnect = isSameZone || (!myZone && !theirZone && distance <= PROXIMITY_RADIUS)
+      for (const [otherId, otherPlayer] of others) {
+        const theirZone = getUserZone(otherPlayer.renderX, otherPlayer.renderY)
+        const distance = Math.hypot(otherPlayer.renderX - me.renderX, otherPlayer.renderY - me.renderY)
+        const hasConnection = peerConnections.current.has(otherId)
 
-      if (shouldConnect && !hasConnection) {
-        if (currentUser.id > otherUser.id) {
-          const pc = createPeerConnection(otherUser.id)
-          try {
-            const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
-            await pc.setLocalDescription(offer)
-            channelRef.current?.send({ type: 'broadcast', event: 'webrtc-offer', payload: { targetId: otherUser.id, senderId: currentUser.id, sdp: offer } })
-          } catch (err) {}
+        const isSameZone = myZone && theirZone && myZone.id === theirZone.id
+        const shouldConnect = isSameZone || (!myZone && !theirZone && distance <= PROXIMITY_RADIUS)
+
+        if (shouldConnect && !hasConnection) {
+          if (currentUser.id > otherId) {
+            const pc = createPeerConnection(otherId)
+            try {
+              const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
+              await pc.setLocalDescription(offer)
+              channelRef.current?.send({ type: 'broadcast', event: 'webrtc-offer', payload: { targetId: otherId, senderId: currentUser.id, sdp: offer } })
+            } catch (_err) {}
+          }
+        } else if (!shouldConnect && hasConnection) {
+          const pc = peerConnections.current.get(otherId)
+          if (pc) pc.close()
+          peerConnections.current.delete(otherId)
+          iceCandidateQueues.current.delete(otherId)
+          setRemoteStreams(prev => { const newState = { ...prev }; delete newState[otherId]; return newState })
         }
-      } else if (!shouldConnect && hasConnection) {
-        const pc = peerConnections.current.get(otherUser.id)
-        if (pc) pc.close()
-        peerConnections.current.delete(otherUser.id)
-        iceCandidateQueues.current.delete(otherUser.id)
-        setRemoteStreams(prev => { const newState = { ...prev }; delete newState[otherUser.id]; return newState })
       }
-    })
-  }, [users, currentUser.id, currentUser.role, localStream, zones, isEditingZones, connectionTrigger])
+    }
+
+    const interval = setInterval(checkProximity, 400)
+    checkProximity()
+    return () => clearInterval(interval)
+  }, [currentUser.id, zones, localStream, connectionTrigger])
 
   useEffect(() => {
     const MOVE_KEYS = new Set(['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd'])
@@ -438,13 +470,13 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
           localStreamRef.current = stream
           setMediaError(null)
           if (videoRef.current) videoRef.current.srcObject = stream
-        } catch (err: any) {
-          if (err.name === 'NotReadableError' && cameraActive && micActive) {
+        } catch (err: unknown) {
+          if (err instanceof Error && err.name === 'NotReadableError' && cameraActive && micActive) {
             try {
               stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true })
               setLocalStream(stream); localStreamRef.current = stream; setMediaError("Camera in use by another window. Audio only active.")
               return
-            } catch (fallbackErr) {}
+            } catch (_fallbackErr) {}
           }
           setMediaError("Could not access camera/microphone.")
         }
@@ -515,6 +547,7 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
           existing.targetX = x; existing.targetY = y; existing.name = name || existing.name; existing.avatarColor = avatarColor || existing.avatarColor; existing.avatar_url = avatar_url
         } else {
           playersRef.current.set(id, { name: name || 'Colleague', avatarColor: avatarColor || 'bg-indigo-500', avatar_url, targetX: x, targetY: y, renderX: x, renderY: y })
+          setUsers(Array.from(playersRef.current.entries()).map(([pid, p]) => ({ id: pid, name: p.name, x: p.renderX, y: p.renderY, avatarColor: p.avatarColor, avatar_url: p.avatar_url })))
         }
       })
       .on('broadcast', { event: 'webrtc-offer' }, async (payload) => {
@@ -525,13 +558,13 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
           await pc.setRemoteDescription(new RTCSessionDescription(sdp))
           const queue = iceCandidateQueues.current.get(senderId) || []
           for (const candidate of queue) {
-            try { await pc.addIceCandidate(new RTCIceCandidate(candidate)) } catch (err) {}
+            try { await pc.addIceCandidate(new RTCIceCandidate(candidate)) } catch (_err) {}
           }
           iceCandidateQueues.current.set(senderId, [])
           const answer = await pc.createAnswer()
           await pc.setLocalDescription(answer)
           roomChannel.send({ type: 'broadcast', event: 'webrtc-answer', payload: { targetId: senderId, senderId: currentUser.id, sdp: answer } })
-        } catch (err) {}
+        } catch (_err) {}
       })
       .on('broadcast', { event: 'webrtc-answer' }, async (payload) => {
         const { targetId, senderId, sdp } = payload.payload
@@ -542,10 +575,10 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
             await pc.setRemoteDescription(new RTCSessionDescription(sdp)) 
             const queue = iceCandidateQueues.current.get(senderId) || []
             for (const candidate of queue) {
-              try { await pc.addIceCandidate(new RTCIceCandidate(candidate)) } catch (err) {}
+              try { await pc.addIceCandidate(new RTCIceCandidate(candidate)) } catch (_err) {}
             }
             iceCandidateQueues.current.set(senderId, [])
-          } catch (err) {}
+          } catch (_err) {}
         }
       })
       .on('broadcast', { event: 'webrtc-ice-batch' }, async (payload) => {
@@ -555,7 +588,7 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
         if (pc) {
           for (const candidate of candidates) {
             if (pc.remoteDescription) {
-              try { await pc.addIceCandidate(new RTCIceCandidate(candidate)) } catch (err) {}
+              try { await pc.addIceCandidate(new RTCIceCandidate(candidate)) } catch (_err) {}
             } else {
               const queue = iceCandidateQueues.current.get(senderId) || []
               queue.push(candidate)
@@ -573,6 +606,7 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
         peerConnections.current.delete(id)
         iceCandidateQueues.current.delete(id)
         setRemoteStreams(prev => { const next = { ...prev }; delete next[id]; return next })
+        setUsers(Array.from(playersRef.current.entries()).map(([pid, p]) => ({ id: pid, name: p.name, x: p.renderX, y: p.renderY, avatarColor: p.avatarColor, avatar_url: p.avatar_url })))
       })
       .on('broadcast', { event: 'media-changed' }, (payload) => {
         const { id } = payload.payload
@@ -681,11 +715,13 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
   useEffect(() => {
     let rafId: number
     let lastTime = performance.now()
+    let lastReactSync = 0
 
     const loop = (now: number) => {
       const dt = Math.min((now - lastTime) / 1000, 0.1)
       lastTime = now
       const me = playersRef.current.get(currentUser.id)
+      let moved = false
       
       if (me) {
         const keys = pressedKeys.current
@@ -696,6 +732,7 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
         if (keys.has('arrowright') || keys.has('d')) dx += 1
 
         if (dx !== 0 || dy !== 0) {
+          moved = true
           const len = Math.hypot(dx, dy) || 1
           me.targetX = clamp(me.targetX + (dx / len) * MOVE_SPEED * dt, AVATAR_RADIUS, MAP_WIDTH - AVATAR_RADIUS)
           me.targetY = clamp(me.targetY + (dy / len) * MOVE_SPEED * dt, AVATAR_RADIUS, MAP_HEIGHT - AVATAR_RADIUS)
@@ -703,6 +740,7 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
           me.renderY = me.targetY
           broadcastPosition(me.targetX, me.targetY)
         } else if (clickTarget.current) {
+          moved = true
           const { x: tx, y: ty } = clickTarget.current
           const dist = Math.hypot(tx - me.targetX, ty - me.targetY)
           if (dist < 2) {
@@ -721,11 +759,28 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
       const smoothing = 1 - Math.pow(0.0001, dt)
       playersRef.current.forEach((p, id) => {
         if (id === currentUser.id) return
-        p.renderX += (p.targetX - p.renderX) * smoothing
-        p.renderY += (p.targetY - p.renderY) * smoothing
+        const diffX = p.targetX - p.renderX
+        const diffY = p.targetY - p.renderY
+        if (Math.abs(diffX) > 0.05 || Math.abs(diffY) > 0.05) {
+          moved = true
+          p.renderX += diffX * smoothing
+          p.renderY += diffY * smoothing
+        }
       })
 
-      setUsers(Array.from(playersRef.current.entries()).map(([id, p]) => ({ id, name: p.name, x: p.renderX, y: p.renderY, avatarColor: p.avatarColor, avatar_url: p.avatar_url })))
+      // Only sync to React state if movement happened AND throttled to ~30 FPS (33ms)
+      if (moved && (now - lastReactSync > 33)) {
+        lastReactSync = now
+        setUsers(Array.from(playersRef.current.entries()).map(([id, p]) => ({
+          id,
+          name: p.name,
+          x: Math.round(p.renderX * 10) / 10,
+          y: Math.round(p.renderY * 10) / 10,
+          avatarColor: p.avatarColor,
+          avatar_url: p.avatar_url
+        })))
+      }
+
       rafId = requestAnimationFrame(loop)
     }
 
@@ -952,6 +1007,7 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
               key={user.id}
               user={user}
               isMe={user.id === currentUser.id}
+              isInZone={!!myCurrentZone}
               currentUserRole={currentUser.role}
               localStream={localStream}
               remoteStream={remoteStreams[user.id]}

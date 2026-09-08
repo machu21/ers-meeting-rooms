@@ -32,6 +32,7 @@
 - Components with [shadcn/ui](https://ui.shadcn.com/)
 - Optional deployment with [Supabase Vercel Integration and Vercel deploy](#deploy-your-own)
   - Environment variables automatically assigned to Vercel project
+- **Specialized AI Agent Team**: Integrated roles for Senior Architect, Frontend UI/UX Designer, Backend & Security Developer, and QA Administrator. See [docs/AGENTS_GUIDE.md](docs/AGENTS_GUIDE.md) and [AGENTS.md](AGENTS.md).
 
 ## Demo
 

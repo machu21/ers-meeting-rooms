@@ -32,7 +32,7 @@ export async function generateMeetingMinutes(zoneId: string) {
   const conversationLog = transcripts.map(t => `${t.user_name}: ${t.content}`).join('\n')
 
   // 4. Prompt Gemini 1.5 Flash (Fast, cheap, and excellent at JSON formatting)
-  const model = genAI.getGenerativeModel({ model: "gemini-3.7-flash" })
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" })
 
   const prompt = `
     You are an expert executive assistant. Below is a raw, unedited voice-to-text transcript of a meeting.
@@ -72,7 +72,7 @@ export async function generateMeetingMinutes(zoneId: string) {
 
     return { success: true, message: "Meeting minutes generated successfully!" }
 
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Gemini Generation Error:", err)
     return { success: false, message: "AI processing failed. Please try again." }
   }
@@ -93,14 +93,19 @@ export async function getLatestMeetingMinutes(zoneId: string) {
   return data
 }
 
-// Add this to the bottom of app/office/ai-actions.ts
+// Save transcript with session verification
 export async function saveTranscript(zoneId: string, userName: string, content: string) {
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { success: false, message: 'Unauthorized' }
+
+  const trimmedContent = content.trim()
+  if (!trimmedContent) return { success: false, message: 'Empty content' }
 
   const { error } = await supabase.from('transcripts').insert({
     zone_id: zoneId,
-    user_name: userName,
-    content: content
+    user_name: userName || user.email?.split('@')[0] || 'User',
+    content: trimmedContent
   })
 
   if (error) {

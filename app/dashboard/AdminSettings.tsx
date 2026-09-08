@@ -1,7 +1,7 @@
 // app/dashboard/AdminSettings.tsx
 'use client'
 
-import { useState, useRef, ChangeEvent } from 'react'
+import React, { useState, useRef, ChangeEvent } from 'react'
 import { updateProfilePicture, updateMediaSettings } from './actions'
 import { CameraIcon, MicrophoneIcon, ArrowUpTrayIcon, CheckCircleIcon, ExclamationCircleIcon, Cog6ToothIcon } from '@heroicons/react/24/solid'
 
@@ -23,7 +23,7 @@ function ToggleRow({
   onChange,
   disabled
 }: {
-  icon: any
+  icon: React.ComponentType<{ className?: string }>
   title: string
   subtitle: string
   checked: boolean
@@ -89,7 +89,7 @@ export default function AdminSettings({ initialData }: AdminSettingsProps) {
         setAvatarUrl(initialData.avatar_url)
         setMessage({ type: 'error', text: response.message })
       }
-    } catch (error) {
+    } catch (_error) {
       setAvatarUrl(initialData.avatar_url)
       setMessage({ type: 'error', text: 'Unexpected error uploading photo.' })
     } finally {
@@ -109,7 +109,7 @@ export default function AdminSettings({ initialData }: AdminSettingsProps) {
       } else {
         setMessage({ type: 'error', text: response.message })
       }
-    } catch (error) {
+    } catch (_error) {
       setMessage({ type: 'error', text: 'Unexpected error saving settings.' })
     } finally {
       setLoading(false)

@@ -84,7 +84,9 @@ export default function ChatPanel({ roomId, currentUser, allUsers, onClose }: Ch
         if (newMessage.type === 'group' || newMessage.sender_id === currentUser.id || newMessage.receiver_id === currentUser.id) {
           setMessages((prev) => {
             const updated = [...prev, newMessage]
-            sessionStorage.setItem(`chat_cache_${currentUser.id}`, JSON.stringify(updated))
+            try {
+              sessionStorage.setItem(`chat_cache_${currentUser.id}`, JSON.stringify(updated.slice(-50)))
+            } catch {}
             return updated
           })
 

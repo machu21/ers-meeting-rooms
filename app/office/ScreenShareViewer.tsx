@@ -29,7 +29,8 @@ export default function ScreenShareViewer({ currentZoneId, usersInCurrentZone, c
   const visibleTracks = screenShareTracks.filter((trackRef) => {
     if (!currentZoneId) return false // We must be in a zone
     const identity = trackRef.participant.identity
-    const participantId = identity.split('_').pop() // Extracts ID since format is Name_ID
+    // Identity format set in route.ts: `${user.id}#${username}`
+    const participantId = identity.split('#')[0]
 
     if (!participantId) return false
     if (participantId === currentUserId) return false // Don't watch our own screen share back
@@ -92,12 +93,14 @@ export default function ScreenShareViewer({ currentZoneId, usersInCurrentZone, c
       <div className="flex flex-col gap-2 bg-black/5 p-2 flex-1 min-h-0 w-full h-full">
           {visibleTracks.map((trackRef) => {
             if (!trackRef.publication) return null
-            const participantName = trackRef.participant.identity.split('_')[0].replace(/%20/g, ' ')
+            const rawIdentity = trackRef.participant.identity
+            // Identity format: `userId#displayName_userId` - extract the display name part
+            const participantName = rawIdentity.split('#')[1]?.split('_')[0]?.replace(/%20/g, ' ') ?? rawIdentity
             
             return (
               <div key={trackRef.publication.trackSid} className="relative flex-1 min-h-0 rounded-xl overflow-hidden bg-black/10 flex items-center justify-center">
                 <VideoTrack 
-                  trackRef={trackRef as any} 
+                  trackRef={trackRef as Parameters<typeof VideoTrack>[0]['trackRef']} 
                   className="w-full h-full object-contain"
                 />
                 <div className="absolute bottom-3 left-3 rounded-lg bg-black/60 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-md">

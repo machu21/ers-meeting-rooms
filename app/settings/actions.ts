@@ -50,7 +50,7 @@ export async function updateEmployeeProfile(formData: FormData) {
   }
 
   // 3. Prepare Database Updates
-  const updates: any = {}
+  const updates: { display_name?: string; avatar_url?: string } = {}
   if (displayName) updates.display_name = displayName
   if (avatarUrl) updates.avatar_url = avatarUrl
 

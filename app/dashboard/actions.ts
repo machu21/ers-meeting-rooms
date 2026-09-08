@@ -1,12 +1,33 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { supabaseAdmin } from '@/lib/supabase/admin' // This is still used by createEmployeeAccount
+import { supabaseAdmin } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 
+async function verifyAdminOrSupervisor() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { authorized: false as const, error: "Unauthorized: Please log in." }
 
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+
+  if (!profile || (profile.role !== 'admin' && profile.role !== 'supervisor')) {
+    return { authorized: false as const, error: "Forbidden: Admin or supervisor access required." }
+  }
+
+  return { authorized: true as const, user }
+}
 
 export async function createEmployeeAccount(formData: FormData): Promise<{ success: boolean; message: string }> {
+  const authCheck = await verifyAdminOrSupervisor()
+  if (!authCheck.authorized) {
+    return { success: false, message: authCheck.error }
+  }
+
   const email = formData.get('email') as string
   const password = formData.get('password') as string
   const role = formData.get('role') as string
@@ -38,8 +59,8 @@ export async function createEmployeeAccount(formData: FormData): Promise<{ succe
         .upsert({ 
           id: authData.user.id, 
           email: email, 
-          role: role, // Replaces hardcoded 'employee'
-          accessible_maps: accessibleMaps // Pushes the array to Postgres
+          role: role, 
+          accessible_maps: accessibleMaps 
         })
 
       if (profileError) return { success: false, message: "User created, but profile setup failed." }
@@ -48,7 +69,7 @@ export async function createEmployeeAccount(formData: FormData): Promise<{ succe
     revalidatePath('/dashboard')
     return { success: true, message: "Team member account created successfully!" }
     
-  } catch (error: any) {
+  } catch {
     return { success: false, message: "An unexpected error occurred." }
   }
 }
@@ -64,7 +85,7 @@ export async function updateProfilePicture(file: File) {
   const fileExtension = file.name.split('.').pop()
   const filePath = `${user.id}.${fileExtension}` // Use user.id as the file name to prevent multiple files per user
 
-  const { data: uploadData, error: uploadError } = await supabase.storage
+  const { error: uploadError } = await supabase.storage
     .from('avatars')
     .upload(filePath, file, { upsert: true, contentType: file.type }) // upsert=true allows overwriting existing files
 
@@ -89,7 +110,7 @@ export async function updateProfilePicture(file: File) {
     return { success: false, message: `Profile Error: ${profileError.message}` }
   }
 
-  revalidatePath('/dashboard') // Optional: refresh the dashboard content
+  revalidatePath('/dashboard')
   return { success: true, message: "Profile picture updated!" }
 }
 
@@ -111,12 +132,16 @@ export async function updateMediaSettings(camera: boolean, microphone: boolean) 
     return { success: false, message: error.message }
   }
 
-  revalidatePath('/dashboard') // Optional
+  revalidatePath('/dashboard')
   return { success: true, message: "Media settings saved!" }
 }
 
 export async function updateUser(userId: string, formData: FormData) {
-  // USE supabaseAdmin INSTEAD OF createClient()
+  const authCheck = await verifyAdminOrSupervisor()
+  if (!authCheck.authorized) {
+    return { success: false, message: authCheck.error }
+  }
+
   const role = formData.get('role') as string
   const accessibleMaps = formData.getAll('maps') as string[]
 
@@ -124,7 +149,6 @@ export async function updateUser(userId: string, formData: FormData) {
     return { success: false, message: "Role and at least one map are required." }
   }
 
-  // Bypasses RLS so the supervisor can edit the employee
   const { error } = await supabaseAdmin
     .from('profiles')
     .update({ role, accessible_maps: accessibleMaps })
@@ -137,10 +161,19 @@ export async function updateUser(userId: string, formData: FormData) {
 }
 
 export async function toggleUserStatus(userId: string, currentStatus: boolean) {
-  // 1. Ban/Unban the user in Supabase Auth (Blocks login and kills active sessions)
-  // currentStatus = true means they are currently active, so we are deactivating (banning) them.
+  const authCheck = await verifyAdminOrSupervisor()
+  if (!authCheck.authorized) {
+    return { success: false, message: authCheck.error }
+  }
+
+  // Prevent users from banning themselves
+  if (authCheck.user.id === userId) {
+    return { success: false, message: "You cannot change your own account status." }
+  }
+
+  // 1. Ban/Unban the user in Supabase Auth
   const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
-    ban_duration: currentStatus ? '876000h' : 'none', // Bans for 100 years, or removes ban
+    ban_duration: currentStatus ? '876000h' : 'none',
   })
 
   if (authError) return { success: false, message: authError.message }

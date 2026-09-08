@@ -1,4 +1,4 @@
-import { Suspense } from 'react'
+import React, { Suspense } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
@@ -24,7 +24,7 @@ const ROLE_STYLES: Record<string, string> = {
   employee: 'bg-slate-100 text-slate-600'
 }
 
-function MapAssignmentCard({ title, users, isUnassigned = false }: { title: string, users: any[], isUnassigned?: boolean }) {
+function MapAssignmentCard({ title, users, isUnassigned = false }: { title: string, users: { id: string; email: string; role: string }[], isUnassigned?: boolean }) {
   return (
     <div className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
       <div className="mb-4 flex items-center gap-2.5 border-b border-slate-100 pb-3">
@@ -66,7 +66,7 @@ function MapAssignmentCard({ title, users, isUnassigned = false }: { title: stri
   )
 }
 
-function StatPill({ icon: Icon, label, value, tone }: { icon: any, label: string, value: number, tone: string }) {
+function StatPill({ icon: Icon, label, value, tone }: { icon: React.ComponentType<{ className?: string }>, label: string, value: number, tone: string }) {
   return (
     <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
       <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${tone}`}>

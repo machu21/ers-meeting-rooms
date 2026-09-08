@@ -7,10 +7,11 @@ import Link from 'next/link'
 import { UserCircleIcon, ArrowLeftIcon } from '@heroicons/react/24/solid'
 import { useRouter } from 'next/navigation'
 
+
+
 export default function SettingsPage() {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
-  const [profile, setProfile] = useState<any>(null)
   
   // Form State
   const [displayName, setDisplayName] = useState('')
@@ -27,7 +28,6 @@ export default function SettingsPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-        setProfile(data)
         setDisplayName(data?.display_name || '')
         if (data?.avatar_url) setPreviewImage(data.avatar_url)
       }
@@ -53,7 +53,6 @@ export default function SettingsPage() {
       setMessage({ type: result.success ? 'success' : 'error', text: result.message })
       
       if (result.success) {
-        setProfile((prev: any) => ({ ...prev, display_name: displayName }))
         setPassword('')
         setConfirmPassword('')
         router.refresh()

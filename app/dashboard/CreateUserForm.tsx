@@ -26,7 +26,7 @@ export default function CreateUserForm() {
       } else {
         setMessage({ type: 'error', text: response.message })
       }
-    } catch (error) {
+    } catch (_error) {
       setMessage({ type: 'error', text: 'An unexpected error occurred.' })
     } finally {
       setLoading(false)
