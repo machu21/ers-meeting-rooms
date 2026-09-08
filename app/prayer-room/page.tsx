@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import VirtualMap from '../office/VirtualMap' // Import from the office folder
+import LiveKitRoomWrapper from '../office/LiveKitRoomWrapper'
 import MapNavigation from '../office/MapNavigation'
 
 async function signOut() {
@@ -93,15 +94,17 @@ async function PrayerRoomContent() {
           </div>
        </header>
 
-<main className="relative flex flex-1 items-center justify-center bg-gray-800 overflow-hidden p-8">
+       <main className="relative flex flex-1 items-center justify-center bg-gray-800 overflow-hidden p-8">
           {/* ISOLATED MAP INSTANCE WITH AMBIENT AUDIO & DISABLED MIC */}
-          <VirtualMap 
-            currentUser={currentUserData} 
-            roomId="prayer_room_1" 
-            mapBackground="/prayer-room.jfif" 
-            ambientAudio="/prayer-music.mp3" 
-            disableMic={true} // <-- ADD THIS
-          />
+          <LiveKitRoomWrapper roomId="prayer_room_1" currentUser={currentUserData}>
+            <VirtualMap 
+              currentUser={currentUserData} 
+              roomId="prayer_room_1" 
+              mapBackground="/prayer-room.jfif" 
+              ambientAudio="/prayer-music.mp3" 
+              disableMic={true} // <-- ADD THIS
+            />
+          </LiveKitRoomWrapper>
        </main>
     </div>
   )

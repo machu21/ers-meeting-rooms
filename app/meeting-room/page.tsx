@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import VirtualMap from '../office/VirtualMap'
+import LiveKitRoomWrapper from '../office/LiveKitRoomWrapper'
 import MapNavigation from '../office/MapNavigation'
 
 async function signOut() {
@@ -93,11 +94,13 @@ async function MeetingRoomContent() {
 
        <main className="relative flex flex-1 items-center justify-center bg-gray-800 overflow-hidden p-8">
           {/* ISOLATED MAP INSTANCE (Standard voice enabled) */}
-          <VirtualMap 
-            currentUser={currentUserData} 
-            roomId="meeting_room_1" 
-            mapBackground="/meeting-room.jfif" 
-          />
+          <LiveKitRoomWrapper roomId="meeting_room_1" currentUser={currentUserData}>
+            <VirtualMap 
+              currentUser={currentUserData} 
+              roomId="meeting_room_1" 
+              mapBackground="/meeting-room.jfif" 
+            />
+          </LiveKitRoomWrapper>
        </main>
     </div>
   )

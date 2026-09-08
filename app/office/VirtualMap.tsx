@@ -7,6 +7,7 @@ import { generateMeetingMinutes, getLatestMeetingMinutes, saveTranscript } from 
 import { getZones, saveZone, deleteZone } from './zone-actions'
 import {
   VideoCameraIcon,
+  VideoCameraSlashIcon,
   MicrophoneIcon,
   ChatBubbleLeftRightIcon,
   SpeakerWaveIcon,
@@ -141,7 +142,7 @@ const MapAvatar = ({
       ? 'ring-4 ring-purple-400/50'
       : ''
 
-  const isGhost = isMe && currentUserRole === 'admin'
+  const isGhost = false // Admins are no longer ghosts so they can be seen on camera
 
   return (
     <div
@@ -192,6 +193,7 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
 
   // 1. Map Auto-Scaling State
   const [fitScale, setFitScale] = useState(1)
+  const [connectionTrigger, setConnectionTrigger] = useState(0)
 
   const [zones, setZones] = useState<Zone[]>([])
   const [isEditingZones, setIsEditingZones] = useState(false)
@@ -231,6 +233,7 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({})
 
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map())
+  const iceCandidateQueues = useRef<Map<string, RTCIceCandidateInit[]>>(new Map())
   const localStreamRef = useRef<MediaStream | null>(null)
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
   const isChannelJoined = useRef(false)
@@ -351,9 +354,9 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
     if (!outerContainerRef.current) return
     const observer = new ResizeObserver((entries) => {
       const { width, height } = entries[0].contentRect
-      // Subtract some padding so the map doesn't touch the edges completely
-      const paddingX = 80
-      const paddingY = 80
+      // Removed padding to make the map span as close to full screen as possible
+      const paddingX = 0
+      const paddingY = 0
       const scale = Math.min((width - paddingX) / MAP_WIDTH, (height - paddingY) / MAP_HEIGHT)
       setFitScale(clamp(scale, 0.2, 2))
     })
@@ -364,7 +367,6 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
   useEffect(() => { getZones(roomId).then(setZones) }, [roomId])
 
   useEffect(() => {
-    if (currentUser.role === 'admin' && !isEditingZones) return
     const me = users.find(u => u.id === currentUser.id)
     if (!me) return
 
@@ -393,10 +395,11 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
         const pc = peerConnections.current.get(otherUser.id)
         if (pc) pc.close()
         peerConnections.current.delete(otherUser.id)
+        iceCandidateQueues.current.delete(otherUser.id)
         setRemoteStreams(prev => { const newState = { ...prev }; delete newState[otherUser.id]; return newState })
       }
     })
-  }, [users, currentUser.id, currentUser.role, localStream, zones, isEditingZones])
+  }, [users, currentUser.id, currentUser.role, localStream, zones, isEditingZones, connectionTrigger])
 
   useEffect(() => {
     const MOVE_KEYS = new Set(['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd'])
@@ -456,10 +459,22 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
   useEffect(() => {
     peerConnections.current.forEach(pc => pc.close())
     peerConnections.current.clear()
+    iceCandidateQueues.current.clear()
     setRemoteStreams({})
-  }, [localStream])
+    
+    // Notify others that our media changed so they can recreate connections
+    if (isChannelJoined.current && channelRef.current) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'media-changed',
+        payload: { id: currentUser.id }
+      })
+    }
+    setConnectionTrigger(prev => prev + 1)
+  }, [localStream, currentUser.id])
 
   const createPeerConnection = (targetId: string) => {
+    iceCandidateQueues.current.delete(targetId)
     const pc = new RTCPeerConnection(ICE_SERVERS)
     if (localStreamRef.current) {
       const sortedTracks = localStreamRef.current.getTracks().sort((a, b) => a.kind.localeCompare(b.kind))
@@ -508,6 +523,11 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
         const pc = createPeerConnection(senderId)
         try {
           await pc.setRemoteDescription(new RTCSessionDescription(sdp))
+          const queue = iceCandidateQueues.current.get(senderId) || []
+          for (const candidate of queue) {
+            try { await pc.addIceCandidate(new RTCIceCandidate(candidate)) } catch (err) {}
+          }
+          iceCandidateQueues.current.set(senderId, [])
           const answer = await pc.createAnswer()
           await pc.setLocalDescription(answer)
           roomChannel.send({ type: 'broadcast', event: 'webrtc-answer', payload: { targetId: senderId, senderId: currentUser.id, sdp: answer } })
@@ -518,7 +538,14 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
         if (targetId !== currentUser.id) return
         const pc = peerConnections.current.get(senderId)
         if (pc && pc.signalingState === 'have-local-offer') {
-          try { await pc.setRemoteDescription(new RTCSessionDescription(sdp)) } catch (err) {}
+          try { 
+            await pc.setRemoteDescription(new RTCSessionDescription(sdp)) 
+            const queue = iceCandidateQueues.current.get(senderId) || []
+            for (const candidate of queue) {
+              try { await pc.addIceCandidate(new RTCIceCandidate(candidate)) } catch (err) {}
+            }
+            iceCandidateQueues.current.set(senderId, [])
+          } catch (err) {}
         }
       })
       .on('broadcast', { event: 'webrtc-ice-batch' }, async (payload) => {
@@ -527,9 +554,13 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
         const pc = peerConnections.current.get(senderId)
         if (pc) {
           for (const candidate of candidates) {
-            const applyCandidate = async () => { try { await pc.addIceCandidate(new RTCIceCandidate(candidate)) } catch (err) {} }
-            if (pc.remoteDescription) applyCandidate()
-            else setTimeout(applyCandidate, 1000)
+            if (pc.remoteDescription) {
+              try { await pc.addIceCandidate(new RTCIceCandidate(candidate)) } catch (err) {}
+            } else {
+              const queue = iceCandidateQueues.current.get(senderId) || []
+              queue.push(candidate)
+              iceCandidateQueues.current.set(senderId, queue)
+            }
           }
         }
       })
@@ -540,7 +571,18 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
         const pc = peerConnections.current.get(id)
         if (pc) pc.close()
         peerConnections.current.delete(id)
+        iceCandidateQueues.current.delete(id)
         setRemoteStreams(prev => { const next = { ...prev }; delete next[id]; return next })
+      })
+      .on('broadcast', { event: 'media-changed' }, (payload) => {
+        const { id } = payload.payload
+        if (!id || id === currentUser.id) return
+        const pc = peerConnections.current.get(id)
+        if (pc) pc.close()
+        peerConnections.current.delete(id)
+        iceCandidateQueues.current.delete(id)
+        setRemoteStreams(prev => { const next = { ...prev }; delete next[id]; return next })
+        setConnectionTrigger(prev => prev + 1)
       })
       .subscribe(async (status: string) => {
         if (status === 'SUBSCRIBED') {
@@ -733,46 +775,84 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
         />
 
         {/* Floating Controls */}
-        <div className="absolute right-6 top-6 flex flex-col gap-2 z-40 bg-white/60 rounded-xl p-2 backdrop-blur-2xl border border-purple-100 shadow-[0_8px_32px_rgba(107,33,168,0.05)]">
-          {currentUser.role === 'admin' && (
+        <div className="absolute right-6 top-6 flex flex-col gap-4 z-40 items-end">
+          
+          {myCurrentZone && !isEditingZones && (
             <button
-              onClick={() => setIsEditingZones(!isEditingZones)}
-              title="Edit Audio Zones"
-              className={`p-2 rounded-lg transition-colors ${isEditingZones ? 'bg-yellow-500 text-white shadow-md' : 'text-purple-600 hover:bg-purple-100 hover:text-purple-900'}`}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => handleGenerateMinutes(e, myCurrentZone.id, myCurrentZone.name)}
+              disabled={generatingZoneId === myCurrentZone.id}
+              className="flex items-center gap-2 rounded-full bg-gradient-to-r from-purple-600 to-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg transition hover:from-purple-500 hover:to-blue-500 disabled:pointer-events-none disabled:opacity-70"
             >
-              <RectangleGroupIcon className="w-6 h-6" />
+              {generatingZoneId === myCurrentZone.id ? (
+                <>
+                  <svg className="h-5 w-5 animate-spin text-white" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Summarizing...
+                </>
+              ) : (
+                <>
+                  <SparklesIcon className="h-5 w-5 text-yellow-300" />
+                  Generate Minutes
+                </>
+              )}
             </button>
+          )}
+
+          {currentUser.role === 'admin' && (
+            <div className="bg-white/60 rounded-xl p-2 backdrop-blur-2xl border border-purple-100 shadow-[0_8px_32px_rgba(107,33,168,0.05)]">
+              <button
+                onClick={() => setIsEditingZones(!isEditingZones)}
+                title="Edit Audio Zones"
+                className={`p-2 rounded-lg transition-colors ${isEditingZones ? 'bg-yellow-500 text-white shadow-md' : 'text-purple-600 hover:bg-purple-100 hover:text-purple-900'}`}
+              >
+                <RectangleGroupIcon className="w-6 h-6" />
+              </button>
+            </div>
           )}
         </div>
 
-        <div className="absolute bottom-6 left-1/2 flex -translate-x-1/2 items-center gap-4 rounded-full border border-purple-100 bg-white/60 px-6 py-3 shadow-[0_8px_32px_rgba(107,33,168,0.05)] backdrop-blur-2xl z-40">
-          <button onClick={(e) => { e.stopPropagation(); setCameraActive(!cameraActive) }} className={`rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 ${cameraActive ? 'bg-purple-600 text-white shadow-[0_0_15px_rgba(147,51,234,0.3)]' : 'bg-white text-gray-500 shadow-sm hover:bg-purple-50 hover:text-purple-700'}`}>
-            <VideoCameraIcon className="h-6 w-6" />
+        <div className="absolute bottom-6 left-1/2 flex -translate-x-1/2 items-center gap-4 rounded-full border border-gray-700 bg-gray-900/90 px-6 py-3 shadow-xl backdrop-blur-md z-40">
+          <button 
+            onClick={(e) => { e.stopPropagation(); setCameraActive(!cameraActive) }} 
+            className={`rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 text-white ${cameraActive ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-500 hover:bg-red-600'}`}
+          >
+            {cameraActive ? <VideoCameraIcon className="h-6 w-6" /> : <VideoCameraSlashIcon className="h-6 w-6" />}
           </button>
 
           {disableMic ? (
-            <button disabled title="Microphones are disabled in this room" className="rounded-full p-3 bg-gray-100 text-gray-400 cursor-not-allowed shadow-inner">
+            <button disabled title="Microphones are disabled in this room" className="relative rounded-full p-3 bg-gray-800 text-gray-500 cursor-not-allowed overflow-hidden">
               <MicrophoneIcon className="h-6 w-6" />
+              <div className="absolute top-1/2 left-1/2 w-6 h-[2px] bg-gray-500 -translate-x-1/2 -translate-y-1/2 -rotate-45" />
             </button>
           ) : (
-            <button onClick={(e) => { e.stopPropagation(); setMicActive(!micActive) }} className={`rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 ${micActive ? 'bg-purple-600 text-white shadow-[0_0_15px_rgba(147,51,234,0.3)]' : 'bg-white text-gray-500 shadow-sm hover:bg-purple-50 hover:text-purple-700'}`}>
+            <button 
+              onClick={(e) => { e.stopPropagation(); setMicActive(!micActive) }} 
+              className={`relative rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 text-white overflow-hidden ${micActive ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-500 hover:bg-red-600'}`}
+            >
               <MicrophoneIcon className="h-6 w-6" />
+              {!micActive && <div className="absolute top-1/2 left-1/2 w-7 h-[2px] bg-white -translate-x-1/2 -translate-y-1/2 -rotate-45" />}
             </button>
           )}
 
           {!myCurrentZone ? (
-            <button disabled title="You must be in a zone to share screen" className="rounded-full p-3 bg-gray-100 text-gray-400 cursor-not-allowed shadow-inner">
+            <button disabled title="You must be in a zone to share screen" className="rounded-full p-3 bg-gray-800 text-gray-500 cursor-not-allowed">
               <TvIcon className="h-6 w-6" />
             </button>
           ) : (
-            <button onClick={toggleScreenShare} className={`rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 ${screenShareActive ? 'bg-purple-600 text-white shadow-[0_0_15px_rgba(147,51,234,0.3)]' : 'bg-white text-gray-500 shadow-sm hover:bg-purple-50 hover:text-purple-700'}`}>
+            <button 
+              onClick={toggleScreenShare} 
+              className={`rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 text-white ${screenShareActive ? 'bg-blue-500 hover:bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}`}
+            >
               <TvIcon className="h-6 w-6" />
             </button>
           )}
 
-          <div className="mx-2 h-8 w-px bg-purple-100"></div>
+          <div className="mx-2 h-8 w-px bg-gray-700"></div>
 
-          <button onClick={(e) => { e.stopPropagation(); setIsChatOpen(!isChatOpen) }} className={`rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 ${isChatOpen ? 'bg-purple-600 text-white shadow-[0_0_15px_rgba(147,51,234,0.3)]' : 'bg-white text-gray-500 shadow-sm hover:bg-purple-50 hover:text-purple-700'}`}>
+          <button onClick={(e) => { e.stopPropagation(); setIsChatOpen(!isChatOpen) }} className={`rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 text-white ${isChatOpen ? 'bg-blue-500 hover:bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}`}>
             <ChatBubbleLeftRightIcon className="h-6 w-6" />
           </button>
 
@@ -851,29 +931,6 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
                   </button>
                 )}
 
-                {!isEditingZones && (isUserInZone || currentUser.role === 'admin') && (
-                  <button
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => handleGenerateMinutes(e, zone.id, zone.name)}
-                    disabled={generatingZoneId === zone.id}
-                    className="absolute -bottom-10 right-0 z-30 flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-lg transition hover:from-purple-500 hover:to-blue-500 disabled:pointer-events-none disabled:opacity-70"
-                  >
-                    {generatingZoneId === zone.id ? (
-                      <>
-                        <svg className="h-3.5 w-3.5 animate-spin text-white" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Summarizing...
-                      </>
-                    ) : (
-                      <>
-                        <SparklesIcon className="h-3.5 w-3.5 text-yellow-300" />
-                        Generate Minutes
-                      </>
-                    )}
-                  </button>
-                )}
               </div>
             )
           })}
