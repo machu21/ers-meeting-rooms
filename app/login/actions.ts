@@ -21,3 +21,9 @@ export async function login(formData: FormData) {
 
   return redirect('/office') 
 }
+
+export async function signOut() {
+  const supabaseClient = await createClient()
+  await supabaseClient.auth.signOut()
+  redirect('/login')
+}

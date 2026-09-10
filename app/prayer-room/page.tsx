@@ -1,17 +1,11 @@
 import { Suspense } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
 import VirtualMap from '../office/VirtualMap' // Import from the office folder
 import LiveKitRoomWrapper from '../office/LiveKitRoomWrapper'
-import MapNavigation from '../office/MapNavigation'
+import MapHeader from '@/components/MapHeader'
 
-async function signOut() {
-  'use server'
-  const supabaseClient = await createClient()
-  await supabaseClient.auth.signOut()
-  redirect('/login')
-}
+
 
 async function PrayerRoomContent() {
   const supabase = await createClient()
@@ -48,53 +42,18 @@ async function PrayerRoomContent() {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-gray-100">
-       <header className="flex items-center justify-between bg-white p-4 shadow-sm border-b z-20">
-          
-          <div className="flex items-center gap-6">
-             <div className="flex items-center gap-3">
-               <h1 className="text-xl font-bold text-gray-800">Elevate Remote Office</h1>
-               <span className="rounded bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-800 uppercase tracking-wider">
-                 {userRole}
-               </span>
-               {userRole === 'admin' && (
-                 <span className="rounded bg-gray-800 px-2 py-1 text-xs font-semibold text-white uppercase tracking-wider">
-                   Ghost Mode
-                 </span>
-               )}
-             </div>
+    <div className="relative flex h-screen flex-col bg-gradient-to-br from-white via-purple-50 to-purple-100 overflow-hidden">
+      
+      {/* --- ANIMATED AMBIENT BACKGROUND --- */}
+      <div className="pointer-events-none absolute top-[-10%] left-[-10%] h-[600px] w-[600px] animate-[spin_15s_linear_infinite] rounded-full bg-purple-300/30 blur-[120px] z-0" />
+      <div className="pointer-events-none absolute bottom-[-10%] right-[-10%] h-[500px] w-[500px] animate-[spin_20s_linear_infinite_reverse] rounded-full bg-fuchsia-300/30 blur-[120px] z-0" />
+      <MapHeader 
+        userRole={userRole} 
+        assignedMaps={assignedMaps} 
+        currentMapId="prayer-room" 
+      />
 
-             {/* Vertical Divider */}
-             <div className="h-6 w-px bg-gray-300"></div>
-
-             {/* The Map Navigation Dropdown set to 'prayer-room' */}
-             <MapNavigation 
-               accessibleMaps={userRole === 'admin' ? ['office', 'prayer-room', 'meeting-room'] : assignedMaps} 
-               currentMapId="prayer-room" 
-             />
-          </div>
-          
-          <div className="flex items-center gap-4">
-             {(userRole === 'supervisor' || userRole === 'admin') && (
-               <Link href="/dashboard" className="text-sm font-medium text-blue-600 hover:text-blue-800">
-                 Admin Dashboard
-               </Link>
-             )}
-
-             {/* Settings link, added for parity with the office page */}
-             <Link href="/settings" className="text-sm font-medium text-gray-600 hover:text-gray-900">
-               Settings
-             </Link>
-
-             <form action={signOut}>
-               <button className="rounded bg-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-300">
-                 Sign Out
-               </button>
-             </form>
-          </div>
-       </header>
-
-       <main className="relative flex flex-1 items-center justify-center bg-gray-800 overflow-hidden p-8">
+      <main className="relative z-10 flex flex-1 items-center justify-center overflow-hidden p-8">
           {/* ISOLATED MAP INSTANCE WITH AMBIENT AUDIO & DISABLED MIC */}
           <LiveKitRoomWrapper roomId="prayer_room_1" currentUser={currentUserData}>
             <VirtualMap 

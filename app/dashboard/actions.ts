@@ -189,3 +189,45 @@ export async function toggleUserStatus(userId: string, currentStatus: boolean) {
   revalidatePath('/dashboard')
   return { success: true, message: `User ${!currentStatus ? 'reactivated' : 'deactivated'} successfully.` }
 }
+
+export async function resetUserPassword(userId: string, formData: FormData) {
+  const authCheck = await verifyAdminOrSupervisor()
+  if (!authCheck.authorized) {
+    return { success: false, message: authCheck.error }
+  }
+
+  const newPassword = formData.get('password') as string
+  if (!newPassword || newPassword.length < 6) {
+    return { success: false, message: "Password must be at least 6 characters long." }
+  }
+
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+    password: newPassword
+  })
+
+  if (error) {
+    return { success: false, message: error.message }
+  }
+
+  return { success: true, message: "Password reset successfully!" }
+}
+
+export async function fetchUserLogs(userId: string) {
+  const authCheck = await verifyAdminOrSupervisor()
+  if (!authCheck.authorized) {
+    return { success: false, error: authCheck.error, logs: [] }
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('app_logs')
+    .select('id, created_at, level, source, message, metadata')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(50)
+
+  if (error) {
+    return { success: false, error: error.message, logs: [] }
+  }
+
+  return { success: true, logs: data || [] }
+}

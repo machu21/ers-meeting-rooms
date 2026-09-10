@@ -2,6 +2,7 @@ import React, { Suspense } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import CreateUserForm from './CreateUserForm'
 import AdminSettings from './AdminSettings'
 import UserManagementTable from './UserManagementTable'
@@ -19,42 +20,42 @@ function initials(email: string) {
 }
 
 const ROLE_STYLES: Record<string, string> = {
-  admin: 'bg-purple-50 text-purple-700',
-  supervisor: 'bg-blue-50 text-blue-700',
-  employee: 'bg-slate-100 text-slate-600'
+  admin: 'bg-purple-100 text-purple-700 border border-purple-200',
+  supervisor: 'bg-blue-100 text-blue-700 border border-blue-200',
+  employee: 'bg-slate-100 text-slate-700 border border-slate-200'
 }
 
 function MapAssignmentCard({ title, users, isUnassigned = false }: { title: string, users: { id: string; email: string; role: string }[], isUnassigned?: boolean }) {
   return (
-    <div className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
-      <div className="mb-4 flex items-center gap-2.5 border-b border-slate-100 pb-3">
-        <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${isUnassigned ? 'bg-amber-50' : 'bg-indigo-50'}`}>
+    <div className="group flex h-full flex-col rounded-3xl border border-white/60 bg-white/40 p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:bg-white/60 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)]">
+      <div className="mb-4 flex items-center gap-3 border-b border-white/50 pb-3">
+        <div className={`flex h-10 w-10 items-center justify-center rounded-xl shadow-sm transition-transform group-hover:scale-110 ${isUnassigned ? 'bg-amber-100/80 text-amber-600' : 'bg-indigo-100/80 text-indigo-600'}`}>
           {isUnassigned ? (
-            <ExclamationTriangleIcon className="h-4 w-4 text-amber-500" />
+            <ExclamationTriangleIcon className="h-5 w-5" />
           ) : (
-            <UserGroupIcon className="h-4 w-4 text-indigo-600" />
+            <UserGroupIcon className="h-5 w-5" />
           )}
         </div>
-        <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
-        <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600">
+        <h3 className="text-sm font-bold text-slate-800">{title}</h3>
+        <span className="ml-auto rounded-full bg-white/80 px-2.5 py-0.5 text-xs font-black tracking-tight text-slate-700 shadow-sm ring-1 ring-black/5">
           {users.length}
         </span>
       </div>
 
-      <div className="max-h-60 flex-1 overflow-y-auto pr-1">
+      <div className="max-h-60 flex-1 overflow-y-auto pr-2 custom-scrollbar">
         {users.length === 0 ? (
-          <p className="mt-6 text-center text-xs text-slate-400">No users currently assigned.</p>
+          <p className="mt-6 text-center text-xs font-medium text-slate-400">No users currently assigned.</p>
         ) : (
-          <ul className="space-y-2.5">
+          <ul className="space-y-3">
             {users.map(u => (
-              <li key={u.id} className="flex items-center gap-2.5">
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-500">
+              <li key={u.id} className="flex items-center gap-3 rounded-xl p-2 transition-colors hover:bg-white/50">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-100 to-slate-200 text-xs font-bold text-slate-600 shadow-sm ring-1 ring-white">
                   {initials(u.email)}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-slate-700">{u.email}</p>
+                  <p className="truncate text-sm font-semibold text-slate-700">{u.email}</p>
                 </div>
-                <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${ROLE_STYLES[u.role] ?? 'bg-slate-100 text-slate-600'}`}>
+                <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider shadow-sm ${ROLE_STYLES[u.role] ?? 'bg-slate-100 text-slate-600'}`}>
                   {u.role}
                 </span>
               </li>
@@ -68,13 +69,13 @@ function MapAssignmentCard({ title, users, isUnassigned = false }: { title: stri
 
 function StatPill({ icon: Icon, label, value, tone }: { icon: React.ComponentType<{ className?: string }>, label: string, value: number, tone: string }) {
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-      <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${tone}`}>
-        <Icon className="h-5 w-5" />
+    <div className="group flex items-center gap-4 rounded-3xl border border-white/60 bg-white/40 px-6 py-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:bg-white/60 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)]">
+      <div className={`flex h-12 w-12 items-center justify-center rounded-2xl shadow-sm transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3 ${tone}`}>
+        <Icon className="h-6 w-6" />
       </div>
       <div>
-        <p className="text-2xl font-bold leading-none text-slate-900">{value}</p>
-        <p className="mt-1 text-xs font-medium text-slate-500">{label}</p>
+        <p className="text-3xl font-black tracking-tight text-slate-900">{value}</p>
+        <p className="mt-0.5 text-xs font-bold uppercase tracking-wider text-slate-500">{label}</p>
       </div>
     </div>
   )
@@ -115,50 +116,60 @@ async function DashboardContent() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 lg:p-10">
-      <div className="mx-auto max-w-7xl">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50/50 via-white to-purple-50/50 p-6 lg:p-10 relative overflow-hidden">
+      {/* Decorative blurred blobs */}
+      <div className="pointer-events-none absolute -left-40 -top-40 h-96 w-96 rounded-full bg-indigo-400/10 blur-[100px]"></div>
+      <div className="pointer-events-none absolute -right-40 top-40 h-96 w-96 rounded-full bg-purple-400/10 blur-[100px]"></div>
+      <div className="pointer-events-none absolute bottom-0 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-blue-400/10 blur-[100px]"></div>
 
+      <div className="relative z-10 mx-auto max-w-7xl">
         {/* Header */}
-        <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-indigo-600">
-              {profile.role === 'admin' ? 'Admin' : 'Supervisor'} Access
-            </p>
-            <h1 className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">
-              {profile.role === 'admin' ? 'Admin Dashboard' : 'Supervisor Dashboard'}
-            </h1>
-            <p className="mt-1 text-sm text-slate-500">Manage your team and virtual office settings.</p>
+        <header className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex items-center gap-5">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white p-2 shadow-sm ring-1 ring-black/5">
+              <Image src="/logo.png" alt="Logo" width={48} height={48} className="object-contain drop-shadow-sm" />
+            </div>
+            <div>
+              <p className="text-xs font-black uppercase tracking-widest text-indigo-500">
+                {profile.role === 'admin' ? 'Admin' : 'Supervisor'} Access
+              </p>
+              <h1 className="text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">
+                {profile.role === 'admin' ? 'Admin Dashboard' : 'Supervisor Dashboard'}
+              </h1>
+            </div>
           </div>
           <Link
             href="/office"
-            className="inline-flex w-fit items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            className="group flex items-center gap-2 rounded-xl border border-white/60 bg-white/40 px-5 py-3 text-sm font-bold text-slate-700 shadow-sm backdrop-blur-md transition-all hover:-translate-y-0.5 hover:bg-white/80 hover:shadow-md"
           >
-            <ArrowLeftIcon className="h-4 w-4" />
+            <ArrowLeftIcon className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
             Back to Office
           </Link>
         </header>
 
         {/* Stat Summary */}
-        <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <StatPill icon={UsersIcon} label="Total Users" value={allUsers?.length || 0} tone="bg-indigo-50 text-indigo-600" />
-          <StatPill icon={CheckCircleIcon} label="Active Users" value={activeUsers.length} tone="bg-emerald-50 text-emerald-600" />
-          <StatPill icon={MapIcon} label="Maps In Use" value={3} tone="bg-blue-50 text-blue-600" />
-          <StatPill icon={ExclamationTriangleIcon} label="Unassigned" value={unassignedUsers.length} tone="bg-amber-50 text-amber-600" />
+        <div className="mb-10 grid grid-cols-2 gap-5 lg:grid-cols-4">
+          <StatPill icon={UsersIcon} label="Total Users" value={allUsers?.length || 0} tone="bg-indigo-100/80 text-indigo-600 border border-indigo-200" />
+          <StatPill icon={CheckCircleIcon} label="Active Users" value={activeUsers.length} tone="bg-emerald-100/80 text-emerald-600 border border-emerald-200" />
+          <StatPill icon={MapIcon} label="Maps In Use" value={3} tone="bg-blue-100/80 text-blue-600 border border-blue-200" />
+          <StatPill icon={ExclamationTriangleIcon} label="Unassigned" value={unassignedUsers.length} tone="bg-amber-100/80 text-amber-600 border border-amber-200" />
         </div>
 
         {/* Forms */}
-        <div className="mb-10 grid gap-6 lg:grid-cols-2">
+        <div className="mb-12 grid gap-6 lg:grid-cols-2">
           <CreateUserForm />
           <AdminSettings initialData={initialSettingsData} />
         </div>
 
         {/* Map Directory */}
-        <div className="mb-10">
-          <div className="mb-5 flex items-center justify-between">
-            <h2 className="text-lg font-bold text-slate-900">Active Map Directory</h2>
-            <span className="text-xs font-medium text-slate-400">{activeUsers.length} active across all maps</span>
+        <div className="mb-12">
+          <div className="mb-6 flex items-end justify-between">
+            <div>
+              <h2 className="text-xl font-black tracking-tight text-slate-900">Active Map Directory</h2>
+              <p className="mt-1 text-sm font-medium text-slate-500">Live distribution of active team members</p>
+            </div>
           </div>
-          <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
             <MapAssignmentCard title="Main Office" users={officeUsers} />
             <MapAssignmentCard title="Meeting Room" users={meetingRoomUsers} />
             <MapAssignmentCard title="Prayer Room" users={prayerRoomUsers} />
@@ -167,8 +178,20 @@ async function DashboardContent() {
         </div>
 
         <UserManagementTable users={allUsers || []} />
-
       </div>
+
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background-color: rgba(148, 163, 184, 0.3);
+          border-radius: 20px;
+        }
+      `}</style>
     </div>
   )
 }
@@ -178,9 +201,9 @@ export default function DashboardPage() {
     <Suspense
       fallback={
         <div className="flex min-h-screen items-center justify-center bg-slate-50 p-8">
-          <div className="flex items-center gap-3 text-slate-500">
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-600"></div>
-            <p className="text-sm font-medium">Loading dashboard and settings...</p>
+          <div className="flex flex-col items-center gap-4 text-slate-500">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-indigo-600"></div>
+            <p className="text-sm font-bold animate-pulse">Loading dashboard environment...</p>
           </div>
         </div>
       }

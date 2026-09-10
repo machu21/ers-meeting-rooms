@@ -19,7 +19,9 @@ import {
 } from '@heroicons/react/24/solid'
 import ChatPanel from './ChatPanel'
 import ScreenShareViewer from './ScreenShareViewer'
-import { useLocalParticipant } from '@livekit/components-react'
+import DeviceSelector from './DeviceSelector'
+import { useLocalParticipant, useRemoteParticipants, AudioTrack, VideoTrack, useTrackVolume } from '@livekit/components-react'
+import { Track, RemoteAudioTrack, LocalAudioTrack } from 'livekit-client'
 
 type MapUser = {
   id: string
@@ -47,106 +49,45 @@ interface VirtualMapProps {
   disableMic?: boolean
 }
 
-const ICE_SERVERS = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' }
-  ]
-}
-
 const PROXIMITY_RADIUS = 150
 const MAP_WIDTH = 1600
 const MAP_HEIGHT = 900
 const AVATAR_RADIUS = 24
 const MOVE_SPEED = 260
 const GLIDE_SPEED = 340
-const BROADCAST_INTERVAL = 300 // Tuned for 8hr demo: ~50% less Realtime messages vs 150ms
+const BROADCAST_INTERVAL = 300
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(v, max))
-
-// 1. Audio Analyzer Hook with Throttled State Updates
-function useVolumeLevel(stream: MediaStream | null) {
-  const [volume, setVolume] = useState(0)
-
-  useEffect(() => {
-    if (!stream || stream.getAudioTracks().length === 0) {
-      setVolume(0)
-      return
-    }
-    const AudioContextClass = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-    if (!AudioContextClass) return
-
-    const audioContext = new AudioContextClass()
-    const analyser = audioContext.createAnalyser()
-    analyser.fftSize = 256
-    const source = audioContext.createMediaStreamSource(stream)
-    source.connect(analyser)
-
-    const dataArray = new Uint8Array(analyser.frequencyBinCount)
-    let animationFrameId: number
-    let lastVolumeUpdate = 0
-
-    const updateVolume = (timestamp: number) => {
-      // Throttle state updates to ~12 FPS (80ms)
-      if (timestamp - lastVolumeUpdate > 80) {
-        lastVolumeUpdate = timestamp
-        analyser.getByteFrequencyData(dataArray)
-        let sum = 0
-        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i]
-        const avg = sum / dataArray.length
-        setVolume(prev => (Math.abs(prev - avg) > 4 ? avg : prev))
-      }
-      animationFrameId = requestAnimationFrame(updateVolume)
-    }
-    animationFrameId = requestAnimationFrame(updateVolume)
-    return () => {
-      cancelAnimationFrame(animationFrameId)
-      source.disconnect()
-      analyser.disconnect()
-      audioContext.close().catch(() => {})
-    }
-  }, [stream])
-  return volume
-}
-
-const RemoteMedia = memo(({ stream }: { stream: MediaStream }) => {
-  const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement>(null)
-  useEffect(() => { if (mediaRef.current) mediaRef.current.srcObject = stream }, [stream])
-  const hasVideo = stream.getVideoTracks().length > 0
-  if (hasVideo) return <video ref={mediaRef as React.RefObject<HTMLVideoElement>} autoPlay playsInline className="h-full w-full object-cover" />
-  else return <audio ref={mediaRef as React.RefObject<HTMLAudioElement>} autoPlay playsInline className="hidden" />
-})
-RemoteMedia.displayName = 'RemoteMedia'
 
 const MapAvatar = memo(({
   user,
   isMe,
   isInZone,
-  currentUserRole: _currentUserRole,
-  localStream,
-  remoteStream,
-  cameraActive,
-  micActive,
-  mediaError,
-  videoRef
+  shouldConnect,
 }: {
   user: MapUser
   isMe: boolean
   isInZone: boolean
-  currentUserRole: string
-  localStream: MediaStream | null
-  remoteStream?: MediaStream
-  cameraActive: boolean
-  micActive: boolean
-  mediaError: string | null
-  videoRef: React.RefObject<HTMLVideoElement | null>
+  shouldConnect: boolean
 }) => {
-  const streamToMeasure = isMe ? (micActive ? localStream : null) : remoteStream
-  const volume = useVolumeLevel(streamToMeasure || null)
+  const remoteParticipants = useRemoteParticipants()
+  const participant = isMe ? null : remoteParticipants.find(p => p.identity.startsWith(user.id + '#'))
 
-  const isSpeaking = volume > 10
-  const hasRemoteStream = !!remoteStream
-  const showVideo = (isMe && cameraActive && !mediaError) || hasRemoteStream
+  const camPub = participant?.getTrackPublication(Track.Source.Camera)
+  const micPub = participant?.getTrackPublication(Track.Source.Microphone)
+  
+  const remoteVolume = useTrackVolume(micPub?.track as RemoteAudioTrack | undefined)
+  
+  const { localParticipant } = useLocalParticipant()
+  const localMicTrack = localParticipant?.getTrackPublication(Track.Source.Microphone)?.track
+  const localVolume = useTrackVolume(localMicTrack as LocalAudioTrack | undefined)
+
+  const volume = isMe ? localVolume : remoteVolume
+  const isSpeaking = volume && volume > 0.05
+
+  const showVideo = isMe 
+    ? localParticipant?.isCameraEnabled 
+    : (shouldConnect && camPub?.track && !camPub.isMuted)
 
   const ringClass = isSpeaking
     ? 'ring-4 ring-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.8)]'
@@ -154,18 +95,16 @@ const MapAvatar = memo(({
       ? 'ring-4 ring-purple-400/50'
       : ''
 
-  const isGhost = false
-
   return (
     <div
-      className={`absolute flex flex-col items-center pointer-events-none ${isMe ? 'z-20' : 'z-10'} ${isGhost ? 'opacity-50 grayscale' : ''}`}
+      className={`absolute flex flex-col items-center pointer-events-none ${isMe ? 'z-20' : 'z-10'}`}
       style={{
         left: `${user.x - AVATAR_RADIUS}px`,
         top: `${user.y - AVATAR_RADIUS}px`,
         transformOrigin: 'top center'
       }}
     >
-      {isMe && !isGhost && !isInZone && (
+      {isMe && !isInZone && (
         <div
           className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-blue-400/30 bg-blue-400/10 pointer-events-none"
           style={{ width: `${PROXIMITY_RADIUS * 2}px`, height: `${PROXIMITY_RADIUS * 2}px` }}
@@ -175,9 +114,13 @@ const MapAvatar = memo(({
       <div className={`relative flex items-center justify-center rounded-full border-2 border-white shadow-md overflow-hidden z-10 transition-[height,width] duration-150 ${user.avatarColor} ${ringClass} ${showVideo ? 'h-16 w-16' : 'h-12 w-12'}`}>
         {showVideo ? (
           isMe ? (
-            <video ref={videoRef} autoPlay playsInline muted className="h-full w-full scale-x-[-1] object-cover" />
+            localParticipant?.getTrackPublication(Track.Source.Camera)?.track && (
+              <VideoTrack trackRef={{ participant: localParticipant, source: Track.Source.Camera, publication: localParticipant.getTrackPublication(Track.Source.Camera)! }} className="h-full w-full scale-x-[-1] object-cover" />
+            )
           ) : (
-            <RemoteMedia stream={remoteStream!} />
+            participant && camPub?.track && (
+              <VideoTrack trackRef={{ participant: participant, source: Track.Source.Camera, publication: camPub }} className="h-full w-full object-cover" />
+            )
           )
         ) : user.avatar_url ? (
           <img src={user.avatar_url} alt={user.name} className="h-full w-full object-cover" />
@@ -189,6 +132,10 @@ const MapAvatar = memo(({
       <div className="mt-1 flex items-center gap-1 rounded bg-black/60 px-2 py-0.5 text-xs font-medium text-white shadow z-10">
         {user.name}
       </div>
+
+      {!isMe && shouldConnect && participant && micPub?.track && !micPub.isMuted && (
+        <AudioTrack trackRef={{ participant: participant, source: Track.Source.Microphone, publication: micPub }} />
+      )}
     </div>
   )
 })
@@ -199,14 +146,11 @@ type Zone = { id: string; name: string; x: number; y: number; width: number; hei
 
 export default function VirtualMap({ currentUser, roomId, mapBackground, ambientAudio, disableMic = false }: VirtualMapProps) {
   const supabase = createClient()
-  const videoRef = useRef<HTMLVideoElement>(null)
   
   const outerContainerRef = useRef<HTMLDivElement>(null)
   const mapBoardRef = useRef<HTMLDivElement>(null)
 
-  // 1. Map Auto-Scaling State
   const [fitScale, setFitScale] = useState(1)
-  const [connectionTrigger, setConnectionTrigger] = useState(0)
 
   const [zones, setZones] = useState<Zone[]>([])
   const [isEditingZones, setIsEditingZones] = useState(false)
@@ -238,21 +182,11 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
   const chatCloseTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const CHAT_TRANSITION_MS = 220
 
-  const [cameraActive, setCameraActive] = useState(currentUser.camera_enabled)
-  const [micActive, setMicActive] = useState(disableMic ? false : currentUser.microphone_enabled)
+  const { localParticipant } = useLocalParticipant()
+  const screenShareActive = localParticipant?.isScreenShareEnabled ?? false
 
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null)
-  const [mediaError, setMediaError] = useState<string | null>(null)
-  const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({})
-
-  const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map())
-  const iceCandidateQueues = useRef<Map<string, RTCIceCandidateInit[]>>(new Map())
-  const localStreamRef = useRef<MediaStream | null>(null)
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
   const isChannelJoined = useRef(false)
-
-  const iceCandidatesBuffer = useRef<{ [targetId: string]: RTCIceCandidateInit[] }>({})
-  const iceFlushTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const playersRef = useRef<Map<string, PlayerMeta>>(
     new Map([[currentUser.id, { name: currentUser.name || 'You', avatarColor: 'bg-blue-500', avatar_url: currentUser.avatar_url, targetX: 800, targetY: 450, renderX: 800, renderY: 450 }]])
@@ -268,22 +202,16 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
 
   const me = users.find(u => u.id === currentUser.id) || { x: 800, y: 450, id: currentUser.id, name: currentUser.name, avatarColor: 'bg-blue-500' }
   const myCurrentZone = zones.find(z => me.x >= z.x && me.x <= z.x + z.width && me.y >= z.y && me.y <= z.y + z.height)
-
-  const { localParticipant } = useLocalParticipant()
-  const [screenShareActive, setScreenShareActive] = useState(false)
   
-  // Calculate users in the same zone for screen share filtering
   const usersInMyZone = users.filter(u => 
     myCurrentZone &&
     u.x >= myCurrentZone.x && u.x <= myCurrentZone.x + myCurrentZone.width &&
     u.y >= myCurrentZone.y && u.y <= myCurrentZone.y + myCurrentZone.height
   ).map(u => u.id)
 
-  // Turn off screen share if user leaves the zone
   useEffect(() => {
     if (!myCurrentZone && screenShareActive && localParticipant) {
       localParticipant.setScreenShareEnabled(false).catch(console.error)
-      setScreenShareActive(false)
     }
   }, [myCurrentZone, screenShareActive, localParticipant])
 
@@ -291,16 +219,12 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
     e.stopPropagation()
     if (!localParticipant) return
     try {
-      const isSharing = !screenShareActive
-      await localParticipant.setScreenShareEnabled(isSharing)
-      setScreenShareActive(isSharing)
+      await localParticipant.setScreenShareEnabled(!screenShareActive)
     } catch (error) {
       console.error('Failed to toggle screen share', error)
-      setScreenShareActive(false) // Revert on failure or cancel
     }
   }
 
-  // Minimal local type for the Web Speech API (not in TS lib by default)
   type SpeechRec = {
     continuous: boolean
     interimResults: boolean
@@ -313,6 +237,10 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
   const recognitionRef = useRef<SpeechRec | null>(null)
   const [isListening, setIsListening] = useState(false)
   const myZoneRef = useRef<Zone | undefined>(myCurrentZone)
+  
+  const micActive = localParticipant?.isMicrophoneEnabled ?? false
+  const cameraActive = localParticipant?.isCameraEnabled ?? false
+
   const micActiveRef = useRef<boolean>(micActive)
 
   useEffect(() => { myZoneRef.current = myCurrentZone }, [myCurrentZone])
@@ -333,7 +261,7 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
       const currentZone = myZoneRef.current
       if (currentZone && micActiveRef.current) {
         const transcript = event.results[event.resultIndex][0].transcript.trim()
-        if (transcript.length > 0) await saveTranscript(currentZone.id, currentUser.name || 'Anonymous', transcript)
+        if (transcript.length > 0) await saveTranscript(currentZone.id, transcript)
       }
     }
 
@@ -373,15 +301,11 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
     })
   }, [currentUser.id, currentUser.name, currentUser.avatar_url])
 
-  // Resize Observer for Fixed Map Scaling
   useEffect(() => {
     if (!outerContainerRef.current) return
     const observer = new ResizeObserver((entries) => {
       const { width, height } = entries[0].contentRect
-      // Removed padding to make the map span as close to full screen as possible
-      const paddingX = 0
-      const paddingY = 0
-      const scale = Math.min((width - paddingX) / MAP_WIDTH, (height - paddingY) / MAP_HEIGHT)
+      const scale = Math.min(width / MAP_WIDTH, height / MAP_HEIGHT)
       setFitScale(clamp(scale, 0.2, 2))
     })
     observer.observe(outerContainerRef.current)
@@ -389,49 +313,6 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
   }, [])
 
   useEffect(() => { getZones(roomId).then(setZones) }, [roomId])
-
-  // Throttled WebRTC Proximity Check (Decoupled from 60FPS render loop)
-  useEffect(() => {
-    const checkProximity = async () => {
-      const me = playersRef.current.get(currentUser.id)
-      if (!me) return
-
-      const getUserZone = (ux: number, uy: number) => zones.find(z => ux >= z.x && ux <= z.x + z.width && uy >= z.y && uy <= z.y + z.height)
-      const myZone = getUserZone(me.renderX, me.renderY)
-
-      const others = Array.from(playersRef.current.entries()).filter(([id]) => id !== currentUser.id)
-
-      for (const [otherId, otherPlayer] of others) {
-        const theirZone = getUserZone(otherPlayer.renderX, otherPlayer.renderY)
-        const distance = Math.hypot(otherPlayer.renderX - me.renderX, otherPlayer.renderY - me.renderY)
-        const hasConnection = peerConnections.current.has(otherId)
-
-        const isSameZone = myZone && theirZone && myZone.id === theirZone.id
-        const shouldConnect = isSameZone || (!myZone && !theirZone && distance <= PROXIMITY_RADIUS)
-
-        if (shouldConnect && !hasConnection) {
-          if (currentUser.id > otherId) {
-            const pc = createPeerConnection(otherId)
-            try {
-              const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
-              await pc.setLocalDescription(offer)
-              channelRef.current?.send({ type: 'broadcast', event: 'webrtc-offer', payload: { targetId: otherId, senderId: currentUser.id, sdp: offer } })
-            } catch (_err) {}
-          }
-        } else if (!shouldConnect && hasConnection) {
-          const pc = peerConnections.current.get(otherId)
-          if (pc) pc.close()
-          peerConnections.current.delete(otherId)
-          iceCandidateQueues.current.delete(otherId)
-          setRemoteStreams(prev => { const newState = { ...prev }; delete newState[otherId]; return newState })
-        }
-      }
-    }
-
-    const interval = setInterval(checkProximity, 400)
-    checkProximity()
-    return () => clearInterval(interval)
-  }, [currentUser.id, zones, localStream, connectionTrigger])
 
   useEffect(() => {
     const MOVE_KEYS = new Set(['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd'])
@@ -461,81 +342,6 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
   }, [])
 
   useEffect(() => {
-    let stream: MediaStream | null = null
-    async function enableMedia() {
-      if (cameraActive || micActive) {
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({ video: cameraActive, audio: micActive })
-          setLocalStream(stream)
-          localStreamRef.current = stream
-          setMediaError(null)
-          if (videoRef.current) videoRef.current.srcObject = stream
-        } catch (err: unknown) {
-          if (err instanceof Error && err.name === 'NotReadableError' && cameraActive && micActive) {
-            try {
-              stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true })
-              setLocalStream(stream); localStreamRef.current = stream; setMediaError("Camera in use by another window. Audio only active.")
-              return
-            } catch (_fallbackErr) {}
-          }
-          setMediaError("Could not access camera/microphone.")
-        }
-      } else {
-        setLocalStream(null); localStreamRef.current = null
-      }
-    }
-    enableMedia()
-    return () => { if (stream) stream.getTracks().forEach(track => track.stop()) }
-  }, [cameraActive, micActive])
-
-  useEffect(() => {
-    peerConnections.current.forEach(pc => pc.close())
-    peerConnections.current.clear()
-    iceCandidateQueues.current.clear()
-    setRemoteStreams({})
-    
-    // Notify others that our media changed so they can recreate connections
-    if (isChannelJoined.current && channelRef.current) {
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'media-changed',
-        payload: { id: currentUser.id }
-      })
-    }
-    setConnectionTrigger(prev => prev + 1)
-  }, [localStream, currentUser.id])
-
-  const createPeerConnection = (targetId: string) => {
-    iceCandidateQueues.current.delete(targetId)
-    const pc = new RTCPeerConnection(ICE_SERVERS)
-    if (localStreamRef.current) {
-      const sortedTracks = localStreamRef.current.getTracks().sort((a, b) => a.kind.localeCompare(b.kind))
-      sortedTracks.forEach(track => pc.addTrack(track, localStreamRef.current!))
-    }
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate && channelRef.current) {
-        if (!iceCandidatesBuffer.current[targetId]) iceCandidatesBuffer.current[targetId] = []
-        iceCandidatesBuffer.current[targetId].push(event.candidate.toJSON())
-
-        if (!iceFlushTimeout.current) {
-          iceFlushTimeout.current = setTimeout(() => {
-            Object.entries(iceCandidatesBuffer.current).forEach(([tid, candidates]) => {
-              channelRef.current?.send({ type: 'broadcast', event: 'webrtc-ice-batch', payload: { targetId: tid, senderId: currentUser.id, candidates } })
-            })
-            iceCandidatesBuffer.current = {}
-            iceFlushTimeout.current = null
-          }, 500)
-        }
-      }
-    }
-
-    pc.ontrack = (event) => setRemoteStreams(prev => ({ ...prev, [targetId]: event.streams[0] }))
-    peerConnections.current.set(targetId, pc)
-    return pc
-  }
-
-  useEffect(() => {
     const roomChannel = supabase.channel(roomId, { config: { broadcast: { self: false } } })
     channelRef.current = roomChannel
 
@@ -550,73 +356,11 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
           setUsers(Array.from(playersRef.current.entries()).map(([pid, p]) => ({ id: pid, name: p.name, x: p.renderX, y: p.renderY, avatarColor: p.avatarColor, avatar_url: p.avatar_url })))
         }
       })
-      .on('broadcast', { event: 'webrtc-offer' }, async (payload) => {
-        const { targetId, senderId, sdp } = payload.payload
-        if (targetId !== currentUser.id) return
-        const pc = createPeerConnection(senderId)
-        try {
-          await pc.setRemoteDescription(new RTCSessionDescription(sdp))
-          const queue = iceCandidateQueues.current.get(senderId) || []
-          for (const candidate of queue) {
-            try { await pc.addIceCandidate(new RTCIceCandidate(candidate)) } catch (_err) {}
-          }
-          iceCandidateQueues.current.set(senderId, [])
-          const answer = await pc.createAnswer()
-          await pc.setLocalDescription(answer)
-          roomChannel.send({ type: 'broadcast', event: 'webrtc-answer', payload: { targetId: senderId, senderId: currentUser.id, sdp: answer } })
-        } catch (_err) {}
-      })
-      .on('broadcast', { event: 'webrtc-answer' }, async (payload) => {
-        const { targetId, senderId, sdp } = payload.payload
-        if (targetId !== currentUser.id) return
-        const pc = peerConnections.current.get(senderId)
-        if (pc && pc.signalingState === 'have-local-offer') {
-          try { 
-            await pc.setRemoteDescription(new RTCSessionDescription(sdp)) 
-            const queue = iceCandidateQueues.current.get(senderId) || []
-            for (const candidate of queue) {
-              try { await pc.addIceCandidate(new RTCIceCandidate(candidate)) } catch (_err) {}
-            }
-            iceCandidateQueues.current.set(senderId, [])
-          } catch (_err) {}
-        }
-      })
-      .on('broadcast', { event: 'webrtc-ice-batch' }, async (payload) => {
-        const { targetId, senderId, candidates } = payload.payload
-        if (targetId !== currentUser.id) return
-        const pc = peerConnections.current.get(senderId)
-        if (pc) {
-          for (const candidate of candidates) {
-            if (pc.remoteDescription) {
-              try { await pc.addIceCandidate(new RTCIceCandidate(candidate)) } catch (_err) {}
-            } else {
-              const queue = iceCandidateQueues.current.get(senderId) || []
-              queue.push(candidate)
-              iceCandidateQueues.current.set(senderId, queue)
-            }
-          }
-        }
-      })
       .on('broadcast', { event: 'user-left' }, (payload) => {
         const { id } = payload.payload
         if (!id || id === currentUser.id) return
         playersRef.current.delete(id)
-        const pc = peerConnections.current.get(id)
-        if (pc) pc.close()
-        peerConnections.current.delete(id)
-        iceCandidateQueues.current.delete(id)
-        setRemoteStreams(prev => { const next = { ...prev }; delete next[id]; return next })
         setUsers(Array.from(playersRef.current.entries()).map(([pid, p]) => ({ id: pid, name: p.name, x: p.renderX, y: p.renderY, avatarColor: p.avatarColor, avatar_url: p.avatar_url })))
-      })
-      .on('broadcast', { event: 'media-changed' }, (payload) => {
-        const { id } = payload.payload
-        if (!id || id === currentUser.id) return
-        const pc = peerConnections.current.get(id)
-        if (pc) pc.close()
-        peerConnections.current.delete(id)
-        iceCandidateQueues.current.delete(id)
-        setRemoteStreams(prev => { const next = { ...prev }; delete next[id]; return next })
-        setConnectionTrigger(prev => prev + 1)
       })
       .subscribe(async (status: string) => {
         if (status === 'SUBSCRIBED') {
@@ -652,7 +396,6 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
     return () => window.removeEventListener('pagehide', announceLeave)
   }, [currentUser.id])
 
-  // UPDATED Coordinates Logic: Accounts for the CSS transform scale!
   const getMapCoords = (e: React.MouseEvent | React.PointerEvent) => {
     const rect = mapBoardRef.current?.getBoundingClientRect()
     if (!rect) return { x: 0, y: 0 }
@@ -768,7 +511,6 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
         }
       })
 
-      // Only sync to React state if movement happened AND throttled to ~30 FPS (33ms)
       if (moved && (now - lastReactSync > 33)) {
         lastReactSync = now
         setUsers(Array.from(playersRef.current.entries()).map(([id, p]) => ({
@@ -820,7 +562,6 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
   return (
     <div className="flex h-full w-full relative items-center justify-center overflow-hidden bg-transparent">
       
-      {/* 1. Main Dynamic Size Container */}
       <div ref={outerContainerRef} className="relative w-full h-full flex items-center justify-center">
 
         <ScreenShareViewer 
@@ -829,9 +570,7 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
           currentUserId={currentUser.id}
         />
 
-        {/* Floating Controls */}
         <div className="absolute right-6 top-6 flex flex-col gap-4 z-40 items-end">
-          
           {myCurrentZone && !isEditingZones && (
             <button
               onPointerDown={(e) => e.stopPropagation()}
@@ -870,27 +609,39 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
         </div>
 
         <div className="absolute bottom-6 left-1/2 flex -translate-x-1/2 items-center gap-4 rounded-full border border-gray-700 bg-gray-900/90 px-6 py-3 shadow-xl backdrop-blur-md z-40">
-          <button 
-            onClick={(e) => { e.stopPropagation(); setCameraActive(!cameraActive) }} 
-            className={`rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 text-white ${cameraActive ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-500 hover:bg-red-600'}`}
-          >
-            {cameraActive ? <VideoCameraIcon className="h-6 w-6" /> : <VideoCameraSlashIcon className="h-6 w-6" />}
-          </button>
-
-          {disableMic ? (
-            <button disabled title="Microphones are disabled in this room" className="relative rounded-full p-3 bg-gray-800 text-gray-500 cursor-not-allowed overflow-hidden">
-              <MicrophoneIcon className="h-6 w-6" />
-              <div className="absolute top-1/2 left-1/2 w-6 h-[2px] bg-gray-500 -translate-x-1/2 -translate-y-1/2 -rotate-45" />
-            </button>
-          ) : (
+          <div className="flex items-center gap-2">
             <button 
-              onClick={(e) => { e.stopPropagation(); setMicActive(!micActive) }} 
-              className={`relative rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 text-white overflow-hidden ${micActive ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-500 hover:bg-red-600'}`}
+              onClick={(e) => { 
+                e.stopPropagation(); 
+                localParticipant?.setCameraEnabled(!cameraActive).catch(console.error); 
+              }} 
+              className={`rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 text-white ${cameraActive ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-500 hover:bg-red-600'}`}
             >
-              <MicrophoneIcon className="h-6 w-6" />
-              {!micActive && <div className="absolute top-1/2 left-1/2 w-7 h-[2px] bg-white -translate-x-1/2 -translate-y-1/2 -rotate-45" />}
+              {cameraActive ? <VideoCameraIcon className="h-6 w-6" /> : <VideoCameraSlashIcon className="h-6 w-6" />}
             </button>
-          )}
+            <DeviceSelector kind="videoinput" variant="icon" />
+          </div>
+
+          <div className="flex items-center gap-2">
+            {disableMic ? (
+              <button disabled title="Microphones are disabled in this room" className="relative rounded-full p-3 bg-gray-800 text-gray-500 cursor-not-allowed overflow-hidden">
+                <MicrophoneIcon className="h-6 w-6" />
+                <div className="absolute top-1/2 left-1/2 w-6 h-[2px] bg-gray-500 -translate-x-1/2 -translate-y-1/2 -rotate-45" />
+              </button>
+            ) : (
+              <button 
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  localParticipant?.setMicrophoneEnabled(!micActive).catch(console.error); 
+                }} 
+                className={`relative rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 text-white overflow-hidden ${micActive ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-500 hover:bg-red-600'}`}
+              >
+                <MicrophoneIcon className="h-6 w-6" />
+                {!micActive && <div className="absolute top-1/2 left-1/2 w-7 h-[2px] bg-white -translate-x-1/2 -translate-y-1/2 -rotate-45" />}
+              </button>
+            )}
+            <DeviceSelector kind="audioinput" variant="icon" />
+          </div>
 
           {!myCurrentZone ? (
             <button disabled title="You must be in a zone to share screen" className="rounded-full p-3 bg-gray-800 text-gray-500 cursor-not-allowed">
@@ -941,7 +692,6 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
           </div>
         )}
 
-        {/* 2. The Fixed, Scaled Map Board */}
         <div
           ref={mapBoardRef}
           className="absolute origin-center overflow-hidden rounded-xl border border-gray-700 shadow-2xl cursor-crosshair bg-center bg-no-repeat"
@@ -985,7 +735,6 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
                     <TrashIcon className="h-4 w-4" />
                   </button>
                 )}
-
               </div>
             )
           })}
@@ -1002,21 +751,22 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
             />
           )}
 
-          {users.map((user) => (
-            <MapAvatar
-              key={user.id}
-              user={user}
-              isMe={user.id === currentUser.id}
-              isInZone={!!myCurrentZone}
-              currentUserRole={currentUser.role}
-              localStream={localStream}
-              remoteStream={remoteStreams[user.id]}
-              cameraActive={cameraActive}
-              micActive={micActive}
-              mediaError={mediaError}
-              videoRef={videoRef}
-            />
-          ))}
+          {users.map((user) => {
+            const theirZone = zones.find(z => user.x >= z.x && user.x <= z.x + z.width && user.y >= z.y && user.y <= z.y + z.height)
+            const isSameZone = myCurrentZone && theirZone && myCurrentZone.id === theirZone.id
+            const distance = Math.hypot(user.x - me.x, user.y - me.y)
+            const shouldConnect = isSameZone || (!myCurrentZone && !theirZone && distance <= PROXIMITY_RADIUS)
+            
+            return (
+              <MapAvatar
+                key={user.id}
+                user={user}
+                isMe={user.id === currentUser.id}
+                isInZone={!!myCurrentZone}
+                shouldConnect={shouldConnect!}
+              />
+            )
+          })}
         </div>
       </div>
 

@@ -18,7 +18,7 @@ export async function generateMeetingMinutes(zoneId: string) {
 
   const { data: transcripts, error: fetchError } = await supabase
     .from('transcripts')
-    .select('user_name, content, created_at')
+    .select('user_id, content, created_at, profiles(display_name)')
     .eq('zone_id', zoneId)
     .gte('created_at', twoHoursAgo)
     .order('created_at', { ascending: true })
@@ -29,7 +29,11 @@ export async function generateMeetingMinutes(zoneId: string) {
   }
 
   // 3. Format the raw data into a clean script for Gemini
-  const conversationLog = transcripts.map(t => `${t.user_name}: ${t.content}`).join('\n')
+  const conversationLog = transcripts.map(t => {
+    // @ts-expect-error profiles is joined dynamically
+    const name = t.profiles?.display_name || 'Unknown User';
+    return `${name}: ${t.content}`;
+  }).join('\n')
 
   // 4. Prompt Gemini 1.5 Flash (Fast, cheap, and excellent at JSON formatting)
   const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" })
@@ -94,7 +98,7 @@ export async function getLatestMeetingMinutes(zoneId: string) {
 }
 
 // Save transcript with session verification
-export async function saveTranscript(zoneId: string, userName: string, content: string) {
+export async function saveTranscript(zoneId: string, content: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { success: false, message: 'Unauthorized' }
@@ -104,7 +108,7 @@ export async function saveTranscript(zoneId: string, userName: string, content: 
 
   const { error } = await supabase.from('transcripts').insert({
     zone_id: zoneId,
-    user_name: userName || user.email?.split('@')[0] || 'User',
+    user_id: user.id,
     content: trimmedContent
   })
 

@@ -7,7 +7,6 @@ import { XMarkIcon, UserGroupIcon, UserIcon } from '@heroicons/react/24/solid'
 type Message = {
   id: string
   sender_id: string
-  sender_name: string
   receiver_id: string | null
   content: string
   type: 'group' | 'direct'
@@ -128,7 +127,6 @@ export default function ChatPanel({ roomId, currentUser, allUsers, onClose }: Ch
 
     const newMessage = {
       sender_id: currentUser.id,
-      sender_name: currentUser.name,
       receiver_id: activeTab === 'direct' ? selectedDmUser : null,
       content: inputValue.trim(),
       type: activeTab
@@ -145,6 +143,12 @@ export default function ChatPanel({ roomId, currentUser, allUsers, onClose }: Ch
   })
 
   const otherUsers = allUsers.filter(u => u.id !== currentUser.id)
+
+  const getSenderName = (id: string) => {
+    if (id === currentUser.id) return currentUser.name
+    const user = allUsers.find(u => u.id === id)
+    return user ? user.name : 'Unknown User'
+  }
 
   return (
     <div className="flex h-[min(600px,70vh)] w-80 flex-col overflow-hidden rounded-2xl border border-purple-100 bg-white/60 shadow-[0_8px_32px_rgba(107,33,168,0.05)] backdrop-blur-2xl shrink-0">
@@ -239,7 +243,7 @@ export default function ChatPanel({ roomId, currentUser, allUsers, onClose }: Ch
               return (
                 <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                   {!isMe && activeTab === 'group' && (
-                    <span className="mb-0.5 px-1 text-[10px] font-medium text-purple-600/70">{msg.sender_name}</span>
+                    <span className="mb-0.5 px-1 text-[10px] font-medium text-purple-600/70">{getSenderName(msg.sender_id)}</span>
                   )}
                   <div
                     className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-snug ${

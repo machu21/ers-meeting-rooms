@@ -1,8 +1,9 @@
 'use client';
 
-import { LiveKitRoom } from '@livekit/components-react';
+import { LiveKitRoom, LocalUserChoices } from '@livekit/components-react';
 import { useEffect, useState } from 'react';
 import '@livekit/components-styles';
+import CustomPreJoin from './CustomPreJoin';
 
 export default function LiveKitRoomWrapper({ 
   roomId, 
@@ -10,10 +11,11 @@ export default function LiveKitRoomWrapper({
   children 
 }: { 
   roomId: string;
-  currentUser: { name: string, id: string };
+  currentUser: { name: string, id: string, camera_enabled?: boolean, microphone_enabled?: boolean };
   children: React.ReactNode;
 }) {
   const [token, setToken] = useState<string>('');
+  const [preJoinChoices, setPreJoinChoices] = useState<LocalUserChoices | null>(null);
 
   useEffect(() => {
     // Fetch the token when the component mounts
@@ -35,10 +37,33 @@ export default function LiveKitRoomWrapper({
     return <div className="flex h-full w-full items-center justify-center text-white">Connecting to LiveKit...</div>;
   }
 
+  if (!preJoinChoices) {
+    return (
+      <CustomPreJoin
+        defaults={{
+          audioEnabled: currentUser.microphone_enabled ?? false,
+          videoEnabled: currentUser.camera_enabled ?? false,
+          username: currentUser.name,
+        }}
+        onSubmit={(values) => {
+          setPreJoinChoices(values);
+        }}
+      />
+    );
+  }
+
   return (
     <LiveKitRoom
-      video={false}
-      audio={false}
+      video={preJoinChoices.videoEnabled}
+      audio={preJoinChoices.audioEnabled}
+      options={{
+        audioCaptureDefaults: {
+          deviceId: preJoinChoices.audioDeviceId,
+        },
+        videoCaptureDefaults: {
+          deviceId: preJoinChoices.videoDeviceId,
+        },
+      }}
       token={token}
       serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL}
       data-lk-theme="default"

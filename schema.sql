@@ -19,7 +19,6 @@ CREATE TABLE public.profiles (
 CREATE TABLE public.messages (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   sender_id uuid NOT NULL,
-  sender_name text NOT NULL,
   receiver_id uuid,
   content text NOT NULL,
   type text NOT NULL CHECK (type = ANY (ARRAY['group'::text, 'direct'::text])),
@@ -37,17 +36,19 @@ CREATE TABLE public.map_zones (
   y numeric NOT NULL,
   width numeric NOT NULL,
   height numeric NOT NULL,
-  CONSTRAINT map_zones_pkey PRIMARY KEY (id)
+  CONSTRAINT map_zones_pkey PRIMARY KEY (id),
+  CONSTRAINT map_zones_room_id_fkey FOREIGN KEY (room_id) REFERENCES public.maps(id)
 );
 
 CREATE TABLE public.transcripts (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   zone_id uuid NOT NULL,
-  user_name text NOT NULL,
+  user_id uuid NOT NULL,
   content text NOT NULL,
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT transcripts_pkey PRIMARY KEY (id),
-  CONSTRAINT transcripts_zone_id_fkey FOREIGN KEY (zone_id) REFERENCES public.map_zones(id)
+  CONSTRAINT transcripts_zone_id_fkey FOREIGN KEY (zone_id) REFERENCES public.map_zones(id),
+  CONSTRAINT transcripts_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
 
 CREATE TABLE public.meeting_minutes (
@@ -68,7 +69,8 @@ CREATE TABLE public.ai_agents (
   system_prompt text NOT NULL,
   assigned_map_id text,
   CONSTRAINT ai_agents_pkey PRIMARY KEY (id),
-  CONSTRAINT ai_agents_id_fkey FOREIGN KEY (id) REFERENCES public.profiles(id)
+  CONSTRAINT ai_agents_id_fkey FOREIGN KEY (id) REFERENCES public.profiles(id),
+  CONSTRAINT ai_agents_assigned_map_id_fkey FOREIGN KEY (assigned_map_id) REFERENCES public.maps(id)
 );
 
 CREATE TABLE public.maps (
@@ -80,6 +82,28 @@ CREATE TABLE public.maps (
   height numeric NOT NULL,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT maps_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE public.app_logs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp with time zone DEFAULT now(),
+  level text NOT NULL CHECK (level IN ('info', 'warn', 'error', 'debug')),
+  source text NOT NULL,
+  message text,
+  metadata jsonb DEFAULT '{}'::jsonb,
+  user_id uuid,
+  CONSTRAINT app_logs_pkey PRIMARY KEY (id),
+  CONSTRAINT app_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+
+CREATE TABLE public.user_presence (
+  user_id uuid NOT NULL,
+  map_id text,
+  last_seen timestamp with time zone DEFAULT now(),
+  status text CHECK (status IN ('online', 'away', 'do_not_disturb', 'offline')),
+  CONSTRAINT user_presence_pkey PRIMARY KEY (user_id),
+  CONSTRAINT user_presence_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT user_presence_map_id_fkey FOREIGN KEY (map_id) REFERENCES public.maps(id)
 );
 
 -- Covering Indexes for Foreign Keys & Real-Time Queries
