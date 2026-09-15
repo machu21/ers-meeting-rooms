@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { MapIcon } from '@heroicons/react/24/solid'
+import SignOutButton from '@/components/SignOutButton'
 
 interface OfficeNavbarProps {
   role: string
@@ -76,11 +77,7 @@ export default function OfficeNavbar({ role, currentMap }: OfficeNavbarProps) {
             Settings
           </Link>
           
-          <form action="/auth/signout" method="post">
-            <button type="submit" className="rounded-lg bg-white/5 px-3 py-1.5 text-gray-300 transition hover:bg-white/10 hover:text-white">
-              Sign Out
-            </button>
-          </form>
+          <SignOutButton variant="navbar" />
         </div>
       </div>
     </nav>

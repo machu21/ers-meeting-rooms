@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback, memo } from 'react'
+import { PixelAvatar, type Direction, type AvatarConfig } from './PixelAvatar'
 import { createClient } from '@/lib/supabase/client'
 import MeetingMinutesModal from './MeetingMinutesModal'
 import { generateMeetingMinutes, getLatestMeetingMinutes, saveTranscript } from './ai-actions'
@@ -15,12 +16,16 @@ import {
   RectangleGroupIcon,
   TrashIcon,
   SparklesIcon,
-  TvIcon
+  TvIcon,
+  MagnifyingGlassPlusIcon,
+  MagnifyingGlassMinusIcon
 } from '@heroicons/react/24/solid'
 import ChatPanel from './ChatPanel'
+import OfficeChannelsSidebar from '@/components/channels/OfficeChannelsSidebar'
+import { HashtagIcon } from '@heroicons/react/24/outline'
 import ScreenShareViewer from './ScreenShareViewer'
 import DeviceSelector from './DeviceSelector'
-import { useLocalParticipant, useRemoteParticipants, AudioTrack, VideoTrack, useTrackVolume } from '@livekit/components-react'
+import { useLocalParticipant, useRemoteParticipants, AudioTrack, useTrackVolume } from '@livekit/components-react'
 import { Track, RemoteAudioTrack, LocalAudioTrack } from 'livekit-client'
 
 type MapUser = {
@@ -30,6 +35,12 @@ type MapUser = {
   y: number
   avatarColor: string
   avatar_url?: string | null
+  gender?: string | null
+  avatarConfig?: AvatarConfig | null
+  isWalking?: boolean
+  isSitting?: boolean
+  direction?: Direction
+  facingLeft?: boolean
 }
 
 type CurrentUser = {
@@ -39,6 +50,8 @@ type CurrentUser = {
   camera_enabled: boolean
   microphone_enabled: boolean
   role: string
+  gender?: string | null
+  avatar_config?: AvatarConfig | null
 }
 
 interface VirtualMapProps {
@@ -55,7 +68,7 @@ const MAP_HEIGHT = 900
 const AVATAR_RADIUS = 24
 const MOVE_SPEED = 260
 const GLIDE_SPEED = 340
-const BROADCAST_INTERVAL = 300
+const BROADCAST_INTERVAL = 60
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(v, max))
 
@@ -83,55 +96,56 @@ const MapAvatar = memo(({
   const localVolume = useTrackVolume(localMicTrack as LocalAudioTrack | undefined)
 
   const volume = isMe ? localVolume : remoteVolume
-  const isSpeaking = volume && volume > 0.05
+  const isSpeaking = !!(volume && volume > 0.05)
 
-  const showVideo = isMe 
+  const showVideo = !!(isMe 
     ? localParticipant?.isCameraEnabled 
-    : (shouldConnect && camPub?.track && !camPub.isMuted)
+    : (shouldConnect && camPub?.track && !camPub.isMuted))
 
-  const ringClass = isSpeaking
-    ? 'ring-4 ring-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.8)]'
-    : showVideo
-      ? 'ring-4 ring-purple-400/50'
-      : ''
+  // Build track refs for PixelAvatar
+  const localCamPub = localParticipant?.getTrackPublication(Track.Source.Camera)
+  const localCamTrackRef = isMe && localParticipant && localCamPub
+    ? { participant: localParticipant, source: Track.Source.Camera as const, publication: localCamPub }
+    : null
+  const remoteCamTrackRef = !isMe && participant && camPub
+    ? { participant, source: Track.Source.Camera as const, publication: camPub }
+    : null
+
+  // 2.5D Isometric depth sorting: sprites lower on the map (higher y) appear in front
+  const depthZIndex = Math.floor(user.y)
 
   return (
     <div
-      className={`absolute flex flex-col items-center pointer-events-none ${isMe ? 'z-20' : 'z-10'}`}
+      className="absolute flex flex-col items-center pointer-events-none"
       style={{
-        left: `${user.x - AVATAR_RADIUS}px`,
-        top: `${user.y - AVATAR_RADIUS}px`,
-        transformOrigin: 'top center'
+        left: `${user.x - 32}px`,
+        top: `${user.y - 68}px`,
+        transformOrigin: 'bottom center',
+        zIndex: depthZIndex
       }}
     >
       {isMe && !isInZone && (
         <div
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-blue-400/30 bg-blue-400/10 pointer-events-none"
+          className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full border border-blue-400/30 bg-blue-400/10 pointer-events-none"
           style={{ width: `${PROXIMITY_RADIUS * 2}px`, height: `${PROXIMITY_RADIUS * 2}px` }}
         />
       )}
 
-      <div className={`relative flex items-center justify-center rounded-full border-2 border-white shadow-md overflow-hidden z-10 transition-[height,width] duration-150 ${user.avatarColor} ${ringClass} ${showVideo ? 'h-16 w-16' : 'h-12 w-12'}`}>
-        {showVideo ? (
-          isMe ? (
-            localParticipant?.getTrackPublication(Track.Source.Camera)?.track && (
-              <VideoTrack trackRef={{ participant: localParticipant, source: Track.Source.Camera, publication: localParticipant.getTrackPublication(Track.Source.Camera)! }} className="h-full w-full scale-x-[-1] object-cover" />
-            )
-          ) : (
-            participant && camPub?.track && (
-              <VideoTrack trackRef={{ participant: participant, source: Track.Source.Camera, publication: camPub }} className="h-full w-full object-cover" />
-            )
-          )
-        ) : user.avatar_url ? (
-          <img src={user.avatar_url} alt={user.name} className="h-full w-full object-cover" />
-        ) : (
-          <span className="font-bold text-white shadow-sm">{user.name.charAt(0)}</span>
-        )}
-      </div>
-
-      <div className="mt-1 flex items-center gap-1 rounded bg-black/60 px-2 py-0.5 text-xs font-medium text-white shadow z-10">
-        {user.name}
-      </div>
+      <PixelAvatar
+        gender={user.gender}
+        avatarConfig={user.avatarConfig}
+        direction={user.direction || (user.facingLeft ? 'left' : 'down')}
+        isWalking={!!user.isWalking}
+        isSitting={!!user.isSitting}
+        isMe={isMe}
+        isSpeaking={isSpeaking}
+        avatarColor={user.avatarColor}
+        avatar_url={user.avatar_url}
+        localCamTrackRef={localCamTrackRef}
+        remoteCamTrackRef={remoteCamTrackRef}
+        showVideo={showVideo}
+        name={user.name}
+      />
 
       {!isMe && shouldConnect && participant && micPub?.track && !micPub.isMuted && (
         <AudioTrack trackRef={{ participant: participant, source: Track.Source.Microphone, publication: micPub }} />
@@ -141,7 +155,21 @@ const MapAvatar = memo(({
 })
 MapAvatar.displayName = 'MapAvatar'
 
-type PlayerMeta = { name: string; avatarColor: string; avatar_url?: string | null; targetX: number; targetY: number; renderX: number; renderY: number }
+type PlayerMeta = {
+  name: string
+  avatarColor: string
+  avatar_url?: string | null
+  gender?: string | null
+  avatarConfig?: AvatarConfig | null
+  targetX: number
+  targetY: number
+  renderX: number
+  renderY: number
+  isWalking?: boolean
+  isSitting?: boolean
+  direction?: Direction
+  facingLeft?: boolean
+}
 type Zone = { id: string; name: string; x: number; y: number; width: number; height: number }
 
 export default function VirtualMap({ currentUser, roomId, mapBackground, ambientAudio, disableMic = false }: VirtualMapProps) {
@@ -150,7 +178,21 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
   const outerContainerRef = useRef<HTMLDivElement>(null)
   const mapBoardRef = useRef<HTMLDivElement>(null)
 
-  const [fitScale, setFitScale] = useState(1)
+  const [containerSize, setContainerSize] = useState({ width: 1600, height: 900 })
+  const [zoomLevel, setZoomLevel] = useState(1.0)
+
+  const handleZoomIn = () => setZoomLevel(prev => clamp(prev + 0.15, 1.0, 3.0))
+  const handleZoomOut = () => setZoomLevel(prev => clamp(prev - 0.15, 1.0, 3.0))
+  const handleResetZoom = () => setZoomLevel(1.0)
+
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (isChannelsOpen || isChatOpen) return
+    if (e.deltaY < 0) {
+      setZoomLevel(prev => clamp(prev + 0.06, 1.0, 3.0))
+    } else if (e.deltaY > 0) {
+      setZoomLevel(prev => clamp(prev - 0.06, 1.0, 3.0))
+    }
+  }
 
   const [zones, setZones] = useState<Zone[]>([])
   const [isEditingZones, setIsEditingZones] = useState(false)
@@ -159,6 +201,10 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
 
   const [generatingZoneId, setGeneratingZoneId] = useState<string | null>(null)
   const [activeMinutes, setActiveMinutes] = useState<{ summary: string; action_items: string; zoneName: string } | null>(null)
+  const [isTogglingCamera, setIsTogglingCamera] = useState(false)
+  const [isTogglingMic, setIsTogglingMic] = useState(false)
+  const [isTogglingScreen, setIsTogglingScreen] = useState(false)
+  const [deletingZoneId, setDeletingZoneId] = useState<string | null>(null)
 
   const handleGenerateMinutes = async (e: React.MouseEvent, zoneId: string, zoneName: string) => {
     e.stopPropagation()
@@ -177,6 +223,7 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
   const [isAmbientPlaying, setIsAmbientPlaying] = useState(false)
 
   const [isChatOpen, setIsChatOpen] = useState(false)
+  const [isChannelsOpen, setIsChannelsOpen] = useState(false)
   const [chatMounted, setChatMounted] = useState(false)
   const [chatEntered, setChatEntered] = useState(false)
   const chatCloseTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -189,15 +236,16 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
   const isChannelJoined = useRef(false)
 
   const playersRef = useRef<Map<string, PlayerMeta>>(
-    new Map([[currentUser.id, { name: currentUser.name || 'You', avatarColor: 'bg-blue-500', avatar_url: currentUser.avatar_url, targetX: 800, targetY: 450, renderX: 800, renderY: 450 }]])
+    new Map([[currentUser.id, { name: currentUser.name || 'You', avatarColor: 'bg-blue-500', avatar_url: currentUser.avatar_url, gender: currentUser.gender, avatarConfig: currentUser.avatar_config, targetX: 800, targetY: 450, renderX: 800, renderY: 450, isWalking: false, direction: 'down', facingLeft: false }]])
   )
   const pressedKeys = useRef<Set<string>>(new Set())
   const clickTarget = useRef<{ x: number; y: number } | null>(null)
   const lastBroadcastAt = useRef(0)
   const lastBroadcastPos = useRef({ x: 800, y: 450 })
+  const syncUsersToStateRef = useRef<() => void>(() => {})
 
   const [users, setUsers] = useState<MapUser[]>(() =>
-    Array.from(playersRef.current.entries()).map(([id, p]) => ({ id, name: p.name, x: p.renderX, y: p.renderY, avatarColor: p.avatarColor, avatar_url: p.avatar_url }))
+    Array.from(playersRef.current.entries()).map(([id, p]) => ({ id, name: p.name, x: p.renderX, y: p.renderY, avatarColor: p.avatarColor, avatar_url: p.avatar_url, gender: p.gender, avatarConfig: p.avatarConfig, isWalking: p.isWalking, isSitting: p.isSitting, direction: p.direction, facingLeft: p.facingLeft }))
   )
 
   const me = users.find(u => u.id === currentUser.id) || { x: 800, y: 450, id: currentUser.id, name: currentUser.name, avatarColor: 'bg-blue-500' }
@@ -209,14 +257,37 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
     u.y >= myCurrentZone.y && u.y <= myCurrentZone.y + myCurrentZone.height
   ).map(u => u.id)
 
+  const W_c = containerSize.width
+  const H_c = containerSize.height
+
+  const baseScale = W_c > 0 && H_c > 0
+    ? Math.max(W_c / MAP_WIDTH, H_c / MAP_HEIGHT)
+    : 1
+  const fitScale = Math.max(baseScale * zoomLevel, baseScale)
+
+  // Camera tracking & Strict Boundary Clamping
+  const renderedMapW = MAP_WIDTH * fitScale
+  const renderedMapH = MAP_HEIGHT * fitScale
+
+  const minX = W_c - renderedMapW
+  const maxX = 0
+  const minY = H_c - renderedMapH
+  const maxY = 0
+
+  const targetTx = (W_c / 2) - (me.x * fitScale)
+  const targetTy = (H_c / 2) - (me.y * fitScale)
+
+  const translateX = W_c > 0 ? clamp(targetTx, minX, maxX) : 0
+  const translateY = H_c > 0 ? clamp(targetTy, minY, maxY) : 0
+
   useEffect(() => {
     if (!myCurrentZone && screenShareActive && localParticipant) {
       localParticipant.setScreenShareEnabled(false).catch(console.error)
     }
   }, [myCurrentZone, screenShareActive, localParticipant])
 
-  const toggleScreenShare = async (e: React.MouseEvent) => {
-    e.stopPropagation()
+  const toggleScreenShare = async (e?: React.MouseEvent) => {
+    e?.stopPropagation()
     if (!localParticipant) return
     try {
       await localParticipant.setScreenShareEnabled(!screenShareActive)
@@ -286,7 +357,7 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
     }
   }, [myCurrentZone, micActive, isListening])
 
-  const broadcastPosition = useCallback((x: number, y: number, force = false) => {
+  const broadcastPosition = useCallback((x: number, y: number, force = false, direction: Direction = 'down', isWalking = false, isSitting = false) => {
     if (!isChannelJoined.current) return
 
     const now = Date.now()
@@ -297,16 +368,76 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
     channelRef.current?.send({
       type: 'broadcast',
       event: 'cursor-move',
-      payload: { id: currentUser.id, name: currentUser.name, avatar_url: currentUser.avatar_url, avatarColor: 'bg-indigo-500', x, y }
+      payload: { 
+        id: currentUser.id, 
+        name: currentUser.name, 
+        avatar_url: currentUser.avatar_url, 
+        avatarColor: 'bg-indigo-500', 
+        gender: currentUser.gender, 
+        avatarConfig: currentUser.avatar_config, 
+        x, 
+        y, 
+        direction,
+        isWalking,
+        isSitting
+      }
     })
-  }, [currentUser.id, currentUser.name, currentUser.avatar_url])
+  }, [currentUser.id, currentUser.name, currentUser.avatar_url, currentUser.gender, currentUser.avatar_config])
+
+  // Keep a stable ref so RAF loop & channel handlers can call sync without touching deps arrays
+  const syncUsersToState = useCallback(() => {
+    setUsers(
+      Array.from(playersRef.current.entries()).map(([id, p]) => ({
+        id,
+        name: p.name,
+        x: Math.round(p.renderX * 10) / 10,
+        y: Math.round(p.renderY * 10) / 10,
+        avatarColor: p.avatarColor,
+        avatar_url: p.avatar_url,
+        gender: p.gender,
+        avatarConfig: p.avatarConfig,
+        isWalking: !!p.isWalking,
+        isSitting: !!p.isSitting,
+        direction: p.direction,
+        facingLeft: p.facingLeft,
+      }))
+    )
+  }, [])
+
+  // Update the ref every render so it's always fresh inside closed-over effects
+  syncUsersToStateRef.current = syncUsersToState
+
+  const handleStop = useCallback(() => {
+    clickTarget.current = null
+    pressedKeys.current.clear()
+    const me = playersRef.current.get(currentUser.id)
+    if (me) {
+      me.isWalking = false
+      me.isSitting = false
+      broadcastPosition(me.targetX, me.targetY, true, me.direction, false, false)
+      syncUsersToStateRef.current()
+    }
+  }, [currentUser.id, broadcastPosition])
+
+  const handleToggleSit = useCallback(() => {
+    clickTarget.current = null
+    pressedKeys.current.clear()
+    const me = playersRef.current.get(currentUser.id)
+    if (me) {
+      me.isWalking = false
+      me.isSitting = !me.isSitting
+      broadcastPosition(me.targetX, me.targetY, true, me.direction, false, me.isSitting)
+      syncUsersToStateRef.current()
+    }
+  }, [currentUser.id, broadcastPosition])
 
   useEffect(() => {
     if (!outerContainerRef.current) return
     const observer = new ResizeObserver((entries) => {
       const { width, height } = entries[0].contentRect
-      const scale = Math.min(width / MAP_WIDTH, height / MAP_HEIGHT)
-      setFitScale(clamp(scale, 0.2, 2))
+      if (width > 0 && height > 0) {
+        setContainerSize({ width, height })
+      }
     })
     observer.observe(outerContainerRef.current)
     return () => observer.disconnect()
@@ -320,6 +451,19 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return
       if (!e.key) return
       const key = e.key.toLowerCase()
+
+      if (key === 'x') {
+        e.preventDefault()
+        handleToggleSit()
+        return
+      }
+
+      if (key === 'escape' || key === ' ') {
+        e.preventDefault()
+        handleStop()
+        return
+      }
+
       if (!MOVE_KEYS.has(key)) return
       e.preventDefault()
       clickTarget.current = null
@@ -339,7 +483,7 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
       window.removeEventListener('keyup', handleKeyUp)
       window.removeEventListener('blur', handleBlur)
     }
-  }, [])
+  }, [handleStop, handleToggleSit])
 
   useEffect(() => {
     const roomChannel = supabase.channel(roomId, { config: { broadcast: { self: false } } })
@@ -347,30 +491,147 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
 
     roomChannel
       .on('broadcast', { event: 'cursor-move' }, (payload) => {
-        const { id, x, y, name, avatarColor, avatar_url } = payload.payload
+        const { 
+          id, 
+          x, 
+          y, 
+          name, 
+          avatarColor, 
+          avatar_url, 
+          gender, 
+          avatarConfig, 
+          direction, 
+          isWalking: remoteIsWalking, 
+          isSitting: remoteIsSitting 
+        } = payload.payload
+
+        if (!id || id === currentUser.id) return
+
         const existing = playersRef.current.get(id)
         if (existing) {
-          existing.targetX = x; existing.targetY = y; existing.name = name || existing.name; existing.avatarColor = avatarColor || existing.avatarColor; existing.avatar_url = avatar_url
+          existing.targetX = x
+          existing.targetY = y
+
+          const dist = Math.hypot(x - existing.renderX, y - existing.renderY)
+          // Teleport snap only if jumping across the screen
+          if (dist > 400) {
+            existing.renderX = x
+            existing.renderY = y
+          }
+
+          existing.name = name || existing.name
+          existing.avatarColor = avatarColor || existing.avatarColor
+          if (avatar_url !== undefined) existing.avatar_url = avatar_url
+          if (gender !== undefined) existing.gender = gender
+          if (avatarConfig !== undefined) existing.avatarConfig = avatarConfig
+          if (direction) {
+            existing.direction = direction
+            existing.facingLeft = direction === 'left'
+          }
+
+          const postureChanged = existing.isSitting !== !!remoteIsSitting
+          existing.isSitting = !!remoteIsSitting
+          existing.isWalking = remoteIsWalking !== undefined ? remoteIsWalking : (dist > 2)
+
+          if (postureChanged) {
+            syncUsersToStateRef.current()
+          }
         } else {
-          playersRef.current.set(id, { name: name || 'Colleague', avatarColor: avatarColor || 'bg-indigo-500', avatar_url, targetX: x, targetY: y, renderX: x, renderY: y })
-          setUsers(Array.from(playersRef.current.entries()).map(([pid, p]) => ({ id: pid, name: p.name, x: p.renderX, y: p.renderY, avatarColor: p.avatarColor, avatar_url: p.avatar_url })))
+          // Discovered an existing player through movement broadcast
+          playersRef.current.set(id, {
+            name: name || 'Colleague',
+            avatarColor: avatarColor || 'bg-indigo-500',
+            avatar_url,
+            gender,
+            avatarConfig,
+            targetX: x,
+            targetY: y,
+            renderX: x,
+            renderY: y,
+            isWalking: !!remoteIsWalking,
+            isSitting: !!remoteIsSitting,
+            direction: direction || 'down',
+            facingLeft: direction === 'left',
+          })
+          syncUsersToStateRef.current()
+        }
+      })
+      .on('broadcast', { event: 'user-joined' }, (payload) => {
+        const { id, x, y, name, avatarColor, avatar_url, gender, avatarConfig, direction, isWalking, isSitting } = payload.payload
+        if (!id || id === currentUser.id) return
+
+        playersRef.current.set(id, {
+          name: name || 'Colleague',
+          avatarColor: avatarColor || 'bg-indigo-500',
+          avatar_url,
+          gender,
+          avatarConfig,
+          targetX: x,
+          targetY: y,
+          renderX: x,
+          renderY: y,
+          isWalking: !!isWalking,
+          isSitting: !!isSitting,
+          direction: direction || 'down',
+          facingLeft: direction === 'left',
+        })
+        syncUsersToStateRef.current()
+
+        // Respond with our own position so newcomer receives our avatar immediately
+        const me = playersRef.current.get(currentUser.id)
+        if (me) {
+          broadcastPosition(me.targetX, me.targetY, true, me.direction, me.isWalking, me.isSitting)
         }
       })
       .on('broadcast', { event: 'user-left' }, (payload) => {
         const { id } = payload.payload
         if (!id || id === currentUser.id) return
         playersRef.current.delete(id)
-        setUsers(Array.from(playersRef.current.entries()).map(([pid, p]) => ({ id: pid, name: p.name, x: p.renderX, y: p.renderY, avatarColor: p.avatarColor, avatar_url: p.avatar_url })))
+        syncUsersToStateRef.current()
       })
       .subscribe(async (status: string) => {
         if (status === 'SUBSCRIBED') {
           isChannelJoined.current = true
           let me = playersRef.current.get(currentUser.id)
           if (!me) {
-            me = { name: currentUser.name || 'You', avatarColor: 'bg-blue-500', avatar_url: currentUser.avatar_url, targetX: 800, targetY: 450, renderX: 800, renderY: 450 }
+            me = { 
+              name: currentUser.name || 'You', 
+              avatarColor: 'bg-blue-500', 
+              avatar_url: currentUser.avatar_url, 
+              gender: currentUser.gender, 
+              avatarConfig: currentUser.avatar_config, 
+              targetX: 800, 
+              targetY: 450, 
+              renderX: 800, 
+              renderY: 450, 
+              isWalking: false, 
+              isSitting: false,
+              direction: 'down', 
+              facingLeft: false 
+            }
             playersRef.current.set(currentUser.id, me)
+            syncUsersToStateRef.current()
           }
-          broadcastPosition(me.targetX, me.targetY, true)
+
+          // Announce ourselves to existing participants
+          roomChannel.send({
+            type: 'broadcast',
+            event: 'user-joined',
+            payload: {
+              id: currentUser.id,
+              name: currentUser.name,
+              avatar_url: currentUser.avatar_url,
+              avatarColor: 'bg-indigo-500',
+              gender: currentUser.gender,
+              avatarConfig: currentUser.avatar_config,
+              x: me.targetX,
+              y: me.targetY,
+              direction: me.direction,
+              isWalking: me.isWalking,
+              isSitting: me.isSitting,
+            }
+          })
+          broadcastPosition(me.targetX, me.targetY, true, me.direction, false, me.isSitting)
         } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           isChannelJoined.current = false
         }
@@ -381,7 +642,7 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
       isChannelJoined.current = false
       supabase.removeChannel(roomChannel)
     }
-  }, [supabase, roomId, currentUser.id, currentUser.name, currentUser.avatar_url, broadcastPosition])
+  }, [supabase, roomId, currentUser.id, currentUser.name, currentUser.avatar_url, currentUser.gender, currentUser.avatar_config, broadcastPosition])
 
   useEffect(() => {
     const me = playersRef.current.get(currentUser.id)
@@ -449,9 +710,11 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
         const dx = Math.abs(me.targetX - lastBroadcastPos.current.x)
         const dy = Math.abs(me.targetY - lastBroadcastPos.current.y)
         const timeSinceLast = Date.now() - lastBroadcastAt.current
-        if (dx > 2 || dy > 2 || timeSinceLast > 10000) broadcastPosition(me.targetX, me.targetY, true)
+        if (dx > 2 || dy > 2 || timeSinceLast > 2500) {
+          broadcastPosition(me.targetX, me.targetY, true, me.direction, me.isWalking, me.isSitting)
+        }
       }
-    }, 3000)
+    }, 2000)
     return () => clearInterval(intervalId)
   }, [currentUser.id, broadcastPosition])
 
@@ -476,51 +739,84 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
 
         if (dx !== 0 || dy !== 0) {
           moved = true
+          me.isSitting = false
           const len = Math.hypot(dx, dy) || 1
           me.targetX = clamp(me.targetX + (dx / len) * MOVE_SPEED * dt, AVATAR_RADIUS, MAP_WIDTH - AVATAR_RADIUS)
           me.targetY = clamp(me.targetY + (dy / len) * MOVE_SPEED * dt, AVATAR_RADIUS, MAP_HEIGHT - AVATAR_RADIUS)
           me.renderX = me.targetX
           me.renderY = me.targetY
-          broadcastPosition(me.targetX, me.targetY)
+          me.isWalking = true
+          if (Math.abs(dy) > Math.abs(dx)) {
+            me.direction = dy > 0 ? 'down' : 'up'
+          } else {
+            me.direction = dx > 0 ? 'right' : 'left'
+          }
+          me.facingLeft = me.direction === 'left'
+          broadcastPosition(me.targetX, me.targetY, false, me.direction, true, false)
         } else if (clickTarget.current) {
           moved = true
+          me.isSitting = false
           const { x: tx, y: ty } = clickTarget.current
           const dist = Math.hypot(tx - me.targetX, ty - me.targetY)
           if (dist < 2) {
             me.targetX = tx; me.targetY = ty; clickTarget.current = null
+            me.isWalking = false
+            broadcastPosition(me.targetX, me.targetY, true, me.direction, false, false)
           } else {
+            const dX = tx - me.targetX
+            const dY = ty - me.targetY
             const step = Math.min(GLIDE_SPEED * dt, dist)
-            me.targetX += ((tx - me.targetX) / dist) * step
-            me.targetY += ((ty - me.targetY) / dist) * step
+            me.targetX += (dX / dist) * step
+            me.targetY += (dY / dist) * step
+            me.isWalking = true
+            if (Math.abs(dY) > Math.abs(dX)) {
+              me.direction = dY > 0 ? 'down' : 'up'
+            } else {
+              me.direction = dX > 0 ? 'right' : 'left'
+            }
+            me.facingLeft = me.direction === 'left'
           }
           me.renderX = me.targetX
           me.renderY = me.targetY
-          broadcastPosition(me.targetX, me.targetY)
+          broadcastPosition(me.targetX, me.targetY, false, me.direction, me.isWalking, false)
+        } else {
+          if (me.isWalking) {
+            moved = true
+            me.isWalking = false
+            broadcastPosition(me.targetX, me.targetY, true, me.direction, false, me.isSitting)
+          }
         }
       }
 
-      const smoothing = 1 - Math.pow(0.0001, dt)
+      // Smooth remote player interpolation
       playersRef.current.forEach((p, id) => {
         if (id === currentUser.id) return
         const diffX = p.targetX - p.renderX
         const diffY = p.targetY - p.renderY
-        if (Math.abs(diffX) > 0.05 || Math.abs(diffY) > 0.05) {
+        const dist = Math.hypot(diffX, diffY)
+        if (dist > 0.5) {
           moved = true
-          p.renderX += diffX * smoothing
-          p.renderY += diffY * smoothing
+          const factor = Math.min(1, 14 * dt)
+          p.renderX += diffX * factor
+          p.renderY += diffY * factor
+          if (dist > 2) {
+            if (Math.abs(diffY) > Math.abs(diffX)) {
+              p.direction = diffY > 0 ? 'down' : 'up'
+            } else {
+              p.direction = diffX > 0 ? 'right' : 'left'
+            }
+            p.facingLeft = p.direction === 'left'
+          }
+        } else if (dist > 0) {
+          p.renderX = p.targetX
+          p.renderY = p.targetY
+          moved = true
         }
       })
 
-      if (moved && (now - lastReactSync > 33)) {
+      if (moved && (now - lastReactSync > 25)) {
         lastReactSync = now
-        setUsers(Array.from(playersRef.current.entries()).map(([id, p]) => ({
-          id,
-          name: p.name,
-          x: Math.round(p.renderX * 10) / 10,
-          y: Math.round(p.renderY * 10) / 10,
-          avatarColor: p.avatarColor,
-          avatar_url: p.avatar_url
-        })))
+        syncUsersToStateRef.current()
       }
 
       rafId = requestAnimationFrame(loop)
@@ -562,7 +858,11 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
   return (
     <div className="flex h-full w-full relative items-center justify-center overflow-hidden bg-transparent">
       
-      <div ref={outerContainerRef} className="relative w-full h-full flex items-center justify-center">
+      <div 
+        ref={outerContainerRef} 
+        onWheel={handleWheel}
+        className="relative w-full h-full flex items-center justify-center overflow-hidden select-none"
+      >
 
         <ScreenShareViewer 
           currentZoneId={myCurrentZone?.id}
@@ -611,13 +911,31 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
         <div className="absolute bottom-6 left-1/2 flex -translate-x-1/2 items-center gap-4 rounded-full border border-gray-700 bg-gray-900/90 px-6 py-3 shadow-xl backdrop-blur-md z-40">
           <div className="flex items-center gap-2">
             <button 
-              onClick={(e) => { 
+              onClick={async (e) => { 
                 e.stopPropagation(); 
-                localParticipant?.setCameraEnabled(!cameraActive).catch(console.error); 
+                if (isTogglingCamera) return;
+                setIsTogglingCamera(true);
+                try {
+                  await localParticipant?.setCameraEnabled(!cameraActive);
+                } catch (err) {
+                  console.error(err);
+                } finally {
+                  setIsTogglingCamera(false);
+                }
               }} 
-              className={`rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 text-white ${cameraActive ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-500 hover:bg-red-600'}`}
+              disabled={isTogglingCamera}
+              className={`rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 text-white disabled:opacity-70 ${cameraActive ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-500 hover:bg-red-600'}`}
             >
-              {cameraActive ? <VideoCameraIcon className="h-6 w-6" /> : <VideoCameraSlashIcon className="h-6 w-6" />}
+              {isTogglingCamera ? (
+                <svg className="h-6 w-6 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              ) : cameraActive ? (
+                <VideoCameraIcon className="h-6 w-6" />
+              ) : (
+                <VideoCameraSlashIcon className="h-6 w-6" />
+              )}
             </button>
             <DeviceSelector kind="videoinput" variant="icon" />
           </div>
@@ -630,14 +948,32 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
               </button>
             ) : (
               <button 
-                onClick={(e) => { 
+                onClick={async (e) => { 
                   e.stopPropagation(); 
-                  localParticipant?.setMicrophoneEnabled(!micActive).catch(console.error); 
+                  if (isTogglingMic) return;
+                  setIsTogglingMic(true);
+                  try {
+                    await localParticipant?.setMicrophoneEnabled(!micActive);
+                  } catch (err) {
+                    console.error(err);
+                  } finally {
+                    setIsTogglingMic(false);
+                  }
                 }} 
-                className={`relative rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 text-white overflow-hidden ${micActive ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-500 hover:bg-red-600'}`}
+                disabled={isTogglingMic}
+                className={`relative rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 text-white overflow-hidden disabled:opacity-70 ${micActive ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-500 hover:bg-red-600'}`}
               >
-                <MicrophoneIcon className="h-6 w-6" />
-                {!micActive && <div className="absolute top-1/2 left-1/2 w-7 h-[2px] bg-white -translate-x-1/2 -translate-y-1/2 -rotate-45" />}
+                {isTogglingMic ? (
+                  <svg className="h-6 w-6 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                ) : (
+                  <>
+                    <MicrophoneIcon className="h-6 w-6" />
+                    {!micActive && <div className="absolute top-1/2 left-1/2 w-7 h-[2px] bg-white -translate-x-1/2 -translate-y-1/2 -rotate-45" />}
+                  </>
+                )}
               </button>
             )}
             <DeviceSelector kind="audioinput" variant="icon" />
@@ -649,14 +985,93 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
             </button>
           ) : (
             <button 
-              onClick={toggleScreenShare} 
-              className={`rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 text-white ${screenShareActive ? 'bg-blue-500 hover:bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}`}
+              onClick={async (e) => {
+                e.stopPropagation();
+                if (isTogglingScreen) return;
+                setIsTogglingScreen(true);
+                try {
+                  await toggleScreenShare();
+                } finally {
+                  setIsTogglingScreen(false);
+                }
+              }} 
+              disabled={isTogglingScreen}
+              className={`rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 text-white disabled:opacity-70 ${screenShareActive ? 'bg-blue-500 hover:bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}`}
             >
-              <TvIcon className="h-6 w-6" />
+              {isTogglingScreen ? (
+                <svg className="h-6 w-6 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              ) : (
+                <TvIcon className="h-6 w-6" />
+              )}
             </button>
           )}
 
           <div className="mx-2 h-8 w-px bg-gray-700"></div>
+
+          {/* Zoom In / Zoom Out Controls */}
+          <div className="flex items-center gap-1 rounded-full bg-gray-800/90 border border-gray-700/80 p-1 text-white shadow-lg backdrop-blur-md">
+            <button
+              onClick={(e) => { e.stopPropagation(); handleZoomOut(); }}
+              disabled={zoomLevel <= 1.0}
+              title="Zoom Out (Min Zoom = 100%)"
+              className="rounded-full p-2 text-gray-300 hover:bg-gray-700 hover:text-white transition active:scale-95 disabled:opacity-40 disabled:pointer-events-none"
+            >
+              <MagnifyingGlassMinusIcon className="h-5 w-5" />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleResetZoom(); }}
+              title="Reset Zoom (Fill Screen)"
+              className="px-2.5 py-1 text-xs font-mono font-bold text-indigo-300 hover:text-white transition rounded hover:bg-gray-700/60"
+            >
+              {Math.round(zoomLevel * 100)}%
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleZoomIn(); }}
+              disabled={zoomLevel >= 3.0}
+              title="Zoom In"
+              className="rounded-full p-2 text-gray-300 hover:bg-gray-700 hover:text-white transition active:scale-95 disabled:opacity-40 disabled:pointer-events-none"
+            >
+              <MagnifyingGlassPlusIcon className="h-5 w-5" />
+            </button>
+          </div>
+
+          {/* Sit / Stand Toggle */}
+          <button
+            onClick={(e) => { e.stopPropagation(); handleToggleSit(); }}
+            title={me.isSitting ? "Stand Up (Key: X)" : "Sit Down (Key: X)"}
+            className={`rounded-full px-3.5 py-2 text-xs font-bold transition-all duration-300 hover:scale-105 active:scale-95 flex items-center gap-1.5 shadow ${
+              me.isSitting
+                ? 'bg-amber-600 text-white hover:bg-amber-500 shadow-[0_0_12px_rgba(217,119,6,0.4)] ring-2 ring-amber-400/50'
+                : 'bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white'
+            }`}
+          >
+            <span className="text-sm">🪑</span>
+            <span>{me.isSitting ? 'Seated' : 'Sit'}</span>
+          </button>
+
+          {/* Emergency Stop Button */}
+          <button
+            onClick={(e) => { e.stopPropagation(); handleStop(); }}
+            title="Stop Movement (Key: Esc / Space)"
+            className="rounded-full px-3.5 py-2 text-xs font-bold transition-all duration-300 hover:scale-105 active:scale-95 flex items-center gap-1.5 bg-red-800/90 text-red-100 hover:bg-red-700 border border-red-600/50 shadow"
+          >
+            <span className="text-sm">🛑</span>
+            <span>Stop</span>
+          </button>
+
+          {/* Elevate Office Channels Toggle */}
+          <button
+            onClick={(e) => { e.stopPropagation(); setIsChannelsOpen(!isChannelsOpen) }}
+            title="Team Channels & Office Chat"
+            className={`rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 text-white ${
+              isChannelsOpen ? 'bg-purple-600 hover:bg-purple-700 ring-2 ring-purple-400 shadow-[0_0_12px_rgba(147,51,234,0.4)]' : 'bg-gray-700 hover:bg-gray-600'
+            }`}
+          >
+            <HashtagIcon className="h-6 w-6" />
+          </button>
 
           <button onClick={(e) => { e.stopPropagation(); setIsChatOpen(!isChatOpen) }} className={`rounded-full p-3 transition-all duration-300 hover:scale-105 active:scale-95 text-white ${isChatOpen ? 'bg-blue-500 hover:bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}`}>
             <ChatBubbleLeftRightIcon className="h-6 w-6" />
@@ -692,16 +1107,31 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
           </div>
         )}
 
+        {/* Elevate Remote Office Channels & Collapsible Chat */}
+        <OfficeChannelsSidebar
+          currentUserId={currentUser.id}
+          currentUserName={currentUser.name || 'You'}
+          currentUserRole={currentUser.role || 'employee'}
+          currentUserAvatarUrl={currentUser.avatar_url}
+          onlineUserIds={users.map(u => u.id)}
+          isOpen={isChannelsOpen}
+          onToggle={() => setIsChannelsOpen(!isChannelsOpen)}
+          onClose={() => setIsChannelsOpen(false)}
+        />
+
         <div
           ref={mapBoardRef}
-          className="absolute origin-center overflow-hidden rounded-xl border border-gray-700 shadow-2xl cursor-crosshair bg-center bg-no-repeat"
+          className="absolute top-0 left-0 overflow-hidden rounded-xl border border-gray-700/40 shadow-2xl cursor-crosshair bg-center"
           style={{
             width: `${MAP_WIDTH}px`,
             height: `${MAP_HEIGHT}px`,
-            transform: `scale(${fitScale})`,
+            transformOrigin: '0 0',
+            transform: `translate3d(${translateX}px, ${translateY}px, 0px) scale(${fitScale})`,
             backgroundColor: '#1E232B',
             backgroundImage: `radial-gradient(ellipse at center, rgba(255,255,255,0.04) 0%, rgba(0,0,0,0.15) 100%), url('${mapBackground}')`,
-            backgroundSize: '100% 100%'
+            backgroundSize: '100% 100%',
+            backgroundRepeat: 'no-repeat',
+            imageRendering: 'auto',
           }}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
@@ -729,10 +1159,29 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
                 {isEditingZones && (
                   <button
                     onPointerDown={(e) => e.stopPropagation()}
-                    onClick={async (e) => { e.stopPropagation(); await deleteZone(zone.id); setZones(await getZones(roomId)); }}
-                    className="absolute -top-6 right-0 rounded bg-red-600 p-1 text-white hover:bg-red-700"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (deletingZoneId) return;
+                      setDeletingZoneId(zone.id);
+                      try {
+                        await deleteZone(zone.id);
+                        setZones(await getZones(roomId));
+                      } finally {
+                        setDeletingZoneId(null);
+                      }
+                    }}
+                    disabled={deletingZoneId === zone.id}
+                    title="Delete Zone"
+                    className="absolute -top-6 right-0 rounded bg-red-600 p-1 text-white hover:bg-red-700 disabled:opacity-50"
                   >
-                    <TrashIcon className="h-4 w-4" />
+                    {deletingZoneId === zone.id ? (
+                      <svg className="h-4 w-4 animate-spin text-white" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                    ) : (
+                      <TrashIcon className="h-4 w-4" />
+                    )}
                   </button>
                 )}
               </div>

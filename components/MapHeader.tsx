@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import MapNavigation from '@/app/office/MapNavigation'
-import { signOut } from '@/app/login/actions'
+import SignOutButton from '@/components/SignOutButton'
 
 interface MapHeaderProps {
   userRole: string
@@ -46,11 +46,7 @@ export default function MapHeader({ userRole, assignedMaps, currentMapId }: MapH
           Settings
         </Link>
 
-        <form action={signOut}>
-          <button className="rounded-xl border border-purple-200 bg-white/50 px-4 py-2 text-sm font-semibold text-purple-900 shadow-sm transition-all hover:bg-white hover:shadow-md active:scale-95">
-            Sign Out
-          </button>
-        </form>
+        <SignOutButton variant="header" />
       </div>
     </header>
   )

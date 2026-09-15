@@ -90,7 +90,14 @@ function UserRow({
                 <XMarkIcon className="h-5 w-5" />
               </button>
               <button type="submit" disabled={isPending} className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md transition-all hover:scale-105 hover:bg-indigo-700 disabled:opacity-50">
-                <CheckIcon className="h-5 w-5" />
+                {isPending ? (
+                  <svg className="h-5 w-5 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                ) : (
+                  <CheckIcon className="h-5 w-5" />
+                )}
               </button>
             </div>
           </form>
@@ -143,7 +150,16 @@ function UserRow({
             title={user.is_active ? "Soft Delete" : "Reactivate"}
             className={`flex h-8 w-8 items-center justify-center rounded-lg bg-white/60 shadow-sm ring-1 ring-black/5 transition hover:bg-white hover:shadow disabled:opacity-30 ${user.is_active ? 'text-red-500 hover:text-red-700' : 'text-emerald-500 hover:text-emerald-700'}`}
           >
-            {user.is_active ? <TrashIcon className="h-4 w-4" /> : <ArrowPathIcon className="h-4 w-4" />}
+            {isPending ? (
+              <svg className="h-4 w-4 animate-spin text-current" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            ) : user.is_active ? (
+              <TrashIcon className="h-4 w-4" />
+            ) : (
+              <ArrowPathIcon className="h-4 w-4" />
+            )}
           </button>
         </div>
       </td>
@@ -339,9 +355,19 @@ export default function UserManagementTable({ users }: { users: User[] }) {
                 <button 
                   type="submit" 
                   disabled={isPending}
-                  className="flex-1 rounded-xl bg-amber-500 py-3 text-sm font-bold text-white shadow-md transition hover:bg-amber-600 disabled:opacity-50"
+                  className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-amber-500 py-3 text-sm font-bold text-white shadow-md transition hover:bg-amber-600 disabled:opacity-50"
                 >
-                  {isPending ? 'Resetting...' : 'Reset Password'}
+                  {isPending ? (
+                    <>
+                      <svg className="h-4 w-4 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span>Resetting...</span>
+                    </>
+                  ) : (
+                    'Reset Password'
+                  )}
                 </button>
               </div>
             </form>

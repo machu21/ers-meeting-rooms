@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import { logActivity } from '@/lib/logger'
 
 // Initialize the Gemini Engine
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
@@ -70,6 +71,14 @@ export async function generateMeetingMinutes(zoneId: string) {
     })
 
     if (insertError) throw insertError
+
+    await logActivity({
+      userId: user.id,
+      level: 'info',
+      source: 'AI_AGENT',
+      message: 'AI meeting minutes generated for zone',
+      metadata: { zone_id: zoneId, summary_preview: parsedData.summary?.substring(0, 100) }
+    })
 
     // 6. Housekeeping: Wipe the temporary raw transcripts for this zone so the next meeting starts fresh
     await supabase.from('transcripts').delete().eq('zone_id', zoneId)

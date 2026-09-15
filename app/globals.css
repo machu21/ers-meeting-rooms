@@ -66,3 +66,51 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ============================================================ */
+/* Walking Avatar Animations                                     */
+/* ============================================================ */
+
+@keyframes walkLeftArm {
+  0%, 100% { transform: rotate(-30deg); }
+  50%       { transform: rotate(30deg); }
+}
+@keyframes walkRightArm {
+  0%, 100% { transform: rotate(30deg); }
+  50%       { transform: rotate(-30deg); }
+}
+@keyframes walkLeftLeg {
+  0%, 100% { transform: rotate(-25deg); }
+  50%       { transform: rotate(25deg); }
+}
+@keyframes walkRightLeg {
+  0%, 100% { transform: rotate(25deg); }
+  50%       { transform: rotate(-25deg); }
+}
+@keyframes idleBob {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-2px); }
+}
+
+.avatar-walk-left-arm  { animation: walkLeftArm  0.5s ease-in-out infinite; transform-origin: top center; }
+.avatar-walk-right-arm { animation: walkRightArm 0.5s ease-in-out infinite; transform-origin: top center; }
+.avatar-walk-left-leg  { animation: walkLeftLeg  0.5s ease-in-out infinite; transform-origin: top center; }
+.avatar-walk-right-leg { animation: walkRightLeg 0.5s ease-in-out infinite; transform-origin: top center; }
+.avatar-idle-bob       { animation: idleBob      1.8s ease-in-out infinite; }
+
+@keyframes bounceShort {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-4px); }
+}
+
+.animate-bounce-short {
+  animation: bounceShort 2s ease-in-out infinite;
+}
+
+.pixelated {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+

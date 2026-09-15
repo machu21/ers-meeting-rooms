@@ -17,14 +17,19 @@ async function OfficeContent() {
   if (!user) redirect('/login')
 
   // 2. Fetch the full profile
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('role, avatar_url, camera_enabled, microphone_enabled, accessible_maps, display_name')
+    .select('role, avatar_url, camera_enabled, microphone_enabled, accessible_maps, display_name, gender, avatar_config')
     .eq('id', user.id)
     .single()
 
+  if (profileError) {
+    console.error('Failed to fetch profile in /office:', profileError.message)
+  }
+
   const userRole = profile?.role || 'employee'
-  const assignedMaps = profile?.accessible_maps || []
+  const DEFAULT_MAPS = ['office', 'meeting-room', 'prayer-room']
+  const assignedMaps = profile?.accessible_maps ?? DEFAULT_MAPS
 
   // 3. MAP AUTHORIZATION CHECK (Admins bypass this check)
   if (userRole !== 'admin') {
@@ -41,10 +46,12 @@ async function OfficeContent() {
     camera_enabled: profile?.camera_enabled || false,
     microphone_enabled: profile?.microphone_enabled || false,
     role: userRole,
+    gender: profile?.gender || null,
+    avatar_config: profile?.avatar_config || null,
   }
 
   return (
-    <div className="relative flex h-screen flex-col bg-gradient-to-br from-white via-purple-50 to-purple-100 overflow-hidden">
+    <div className="fixed inset-0 flex w-screen h-screen flex-col bg-gradient-to-br from-white via-purple-50 to-purple-100 overflow-hidden select-none">
       
       {/* --- ANIMATED AMBIENT BACKGROUND --- */}
       <div className="pointer-events-none absolute top-[-10%] left-[-10%] h-[600px] w-[600px] animate-[spin_15s_linear_infinite] rounded-full bg-purple-300/30 blur-[120px] z-0" />

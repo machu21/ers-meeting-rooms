@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { logActivity } from '@/lib/logger'
 
 export async function getZones(roomId: string) {
   const supabase = await createClient()
@@ -31,6 +32,14 @@ export async function saveZone(roomId: string, name: string, x: number, y: numbe
   const { error } = await supabase.from('map_zones').insert([{ room_id: roomId, name, x, y, width, height }])
   if (error) return { success: false, message: error.message }
 
+  await logActivity({
+    userId: user.id,
+    level: 'info',
+    source: 'ROOM',
+    message: `Created audio zone '${name}' in room '${roomId}'`,
+    metadata: { roomId, name, x, y, width, height }
+  })
+
   return { success: true }
 }
 
@@ -53,6 +62,14 @@ export async function deleteZone(zoneId: string) {
 
   const { error } = await supabase.from('map_zones').delete().eq('id', zoneId)
   if (error) return { success: false, message: error.message }
+
+  await logActivity({
+    userId: user.id,
+    level: 'warn',
+    source: 'ROOM',
+    message: `Deleted audio zone '${zoneId}'`,
+    metadata: { zoneId }
+  })
 
   return { success: true }
 }

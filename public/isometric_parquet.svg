@@ -1,0 +1,27 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <!-- Base terracotta/warm wood fill -->
+  <rect width="64" height="64" fill="#8d5b43"/>
+  
+  <!-- Diagonal grid border / grout -->
+  <path d="M0,0 L64,64 M64,0 L0,64" stroke="#5a3422" stroke-width="2"/>
+  <rect width="64" height="64" fill="none" stroke="#4a2a1a" stroke-width="2"/>
+
+  <!-- Diamond center section -->
+  <polygon points="32,0 64,32 32,64 0,32" fill="#a46d50"/>
+  <polygon points="32,8 56,32 32,56 8,32" fill="#b97e5d"/>
+  <polygon points="32,16 48,32 32,48 16,32" fill="#c98e6b"/>
+  <polygon points="32,24 40,32 32,40 24,32" fill="#9e6648"/>
+  
+  <!-- Fine wood grain hatch lines -->
+  <path d="M0,8 L8,0 M0,24 L24,0 M0,40 L40,0 M0,56 L56,0" stroke="#7a4b35" stroke-width="1" opacity="0.6"/>
+  <path d="M8,64 L64,8 M24,64 L64,24 M40,64 L64,40 M56,64 L64,56" stroke="#7a4b35" stroke-width="1" opacity="0.6"/>
+
+  <path d="M64,8 L56,0 M64,24 L40,0 M64,40 L24,0 M64,56 L8,0" stroke="#523120" stroke-width="1" opacity="0.4"/>
+  <path d="M56,64 L0,8 M40,64 L0,24 M24,64 L0,40 M8,64 L0,56" stroke="#523120" stroke-width="1" opacity="0.4"/>
+
+  <!-- Subtle corner highlights and shadow borders for 2.5D bevel effect -->
+  <line x1="0" y1="0" x2="64" y2="0" stroke="#d49d79" stroke-width="1" opacity="0.5"/>
+  <line x1="0" y1="0" x2="0" y2="64" stroke="#d49d79" stroke-width="1" opacity="0.5"/>
+  <line x1="0" y1="64" x2="64" y2="64" stroke="#361c10" stroke-width="1" opacity="0.7"/>
+  <line x1="64" y1="0" x2="64" y2="64" stroke="#361c10" stroke-width="1" opacity="0.7"/>
+</svg>

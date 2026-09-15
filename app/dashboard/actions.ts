@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import { logActivity } from '@/lib/logger'
 
 async function verifyAdminOrSupervisor() {
   const supabase = await createClient()
@@ -64,6 +65,28 @@ export async function createEmployeeAccount(formData: FormData): Promise<{ succe
         })
 
       if (profileError) return { success: false, message: "User created, but profile setup failed." }
+
+      // Synchronize normalized user_map_permissions junction table
+      const mapInserts = accessibleMaps.map(slug => {
+        const mapId = slug === 'office' ? 'office_room_1' : slug === 'meeting-room' ? 'meeting_room_1' : slug === 'prayer-room' ? 'prayer_room_1' : slug
+        return { user_id: authData.user.id, map_id: mapId }
+      })
+      if (mapInserts.length > 0) {
+        await supabaseAdmin.from('user_map_permissions').upsert(mapInserts, { onConflict: 'user_id,map_id' })
+      }
+
+      await logActivity({
+        userId: authData.user.id,
+        level: 'info',
+        source: 'USER_MANAGEMENT',
+        message: `Employee account created with role '${role}'`,
+        metadata: {
+          email,
+          role,
+          accessible_maps: accessibleMaps,
+          created_by: authCheck.user.id
+        }
+      })
     }
 
     revalidatePath('/dashboard')
@@ -155,6 +178,28 @@ export async function updateUser(userId: string, formData: FormData) {
     .eq('id', userId)
 
   if (error) return { success: false, message: error.message }
+
+  // Synchronize normalized user_map_permissions junction table
+  await supabaseAdmin.from('user_map_permissions').delete().eq('user_id', userId)
+  const mapInserts = accessibleMaps.map(slug => {
+    const mapId = slug === 'office' ? 'office_room_1' : slug === 'meeting-room' ? 'meeting_room_1' : slug === 'prayer-room' ? 'prayer_room_1' : slug
+    return { user_id: userId, map_id: mapId }
+  })
+  if (mapInserts.length > 0) {
+    await supabaseAdmin.from('user_map_permissions').upsert(mapInserts, { onConflict: 'user_id,map_id' })
+  }
+
+  await logActivity({
+    userId,
+    level: 'info',
+    source: 'USER_MANAGEMENT',
+    message: `Account updated: role set to '${role}'`,
+    metadata: {
+      role,
+      accessible_maps: accessibleMaps,
+      updated_by: authCheck.user.id
+    }
+  })
   
   revalidatePath('/dashboard')
   return { success: true, message: "User updated successfully." }
@@ -185,8 +230,44 @@ export async function toggleUserStatus(userId: string, currentStatus: boolean) {
     .eq('id', userId)
 
   if (profileError) return { success: false, message: profileError.message }
+
+  // 3. Sync channel memberships
+  if (currentStatus) {
+    // User is being deactivated -> remove from all channel memberships
+    await supabaseAdmin
+      .from('channel_members')
+      .delete()
+      .eq('user_id', userId)
+  } else {
+    // User is being reactivated -> add back to all public channels
+    const { data: publicChannels } = await supabaseAdmin
+      .from('channels')
+      .select('id')
+      .eq('is_private', false)
+
+    if (publicChannels && publicChannels.length > 0) {
+      const rows = publicChannels.map((c) => ({
+        channel_id: c.id,
+        user_id: userId,
+        role: 'member' as const,
+      }))
+      await supabaseAdmin.from('channel_members').upsert(rows, { onConflict: 'channel_id,user_id' })
+    }
+  }
+
+  await logActivity({
+    userId,
+    level: currentStatus ? 'warn' : 'info',
+    source: 'USER_MANAGEMENT',
+    message: currentStatus ? 'User account deactivated' : 'User account reactivated',
+    metadata: {
+      action: currentStatus ? 'deactivate' : 'reactivate',
+      performed_by: authCheck.user.id
+    }
+  })
   
   revalidatePath('/dashboard')
+  revalidatePath('/office')
   return { success: true, message: `User ${!currentStatus ? 'reactivated' : 'deactivated'} successfully.` }
 }
 
@@ -208,6 +289,16 @@ export async function resetUserPassword(userId: string, formData: FormData) {
   if (error) {
     return { success: false, message: error.message }
   }
+
+  await logActivity({
+    userId,
+    level: 'warn',
+    source: 'USER_MANAGEMENT',
+    message: 'User password reset by administrator',
+    metadata: {
+      reset_by: authCheck.user.id
+    }
+  })
 
   return { success: true, message: "Password reset successfully!" }
 }

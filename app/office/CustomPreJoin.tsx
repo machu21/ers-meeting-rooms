@@ -18,6 +18,7 @@ export default function CustomPreJoin({ defaults, onSubmit }: CustomPreJoinProps
   const audioSelect = useMediaDeviceSelect({ kind: 'audioinput', requestPermissions: true });
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [isJoining, setIsJoining] = useState(false);
 
   // Simple preview logic using vanilla navigator.mediaDevices
   useEffect(() => {
@@ -127,6 +128,7 @@ export default function CustomPreJoin({ defaults, onSubmit }: CustomPreJoinProps
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setIsJoining(true);
     onSubmit({
       username,
       videoEnabled,
@@ -209,9 +211,20 @@ export default function CustomPreJoin({ defaults, onSubmit }: CustomPreJoinProps
           <div className="pt-4 border-t border-gray-800">
             <button
               type="submit"
-              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-all active:scale-[0.98] flex justify-center items-center gap-2"
+              disabled={isJoining}
+              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-all active:scale-[0.98] flex justify-center items-center gap-2 disabled:opacity-60 disabled:pointer-events-none"
             >
-              Join Office
+              {isJoining ? (
+                <>
+                  <svg className="h-5 w-5 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span>Connecting to Office...</span>
+                </>
+              ) : (
+                <span>Join Office</span>
+              )}
             </button>
           </div>
         </form>
