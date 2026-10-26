@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import Image from 'next/image'
 import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -276,13 +277,19 @@ export default function OfficeChannelsSidebar({
               <div className="flex h-14 items-center justify-between border-b border-zinc-800/90 px-4 py-2.5 bg-[#121016]">
                 {!isSidebarCollapsed ? (
                   <div className="flex items-center gap-2.5 truncate">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-500 text-white shadow-md font-bold text-sm">
-                      #
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-purple-600/15 p-1 ring-1 ring-purple-500/25 shadow-md">
+                      <Image
+                        src="/logo-icon.png"
+                        alt="ERS Emblem"
+                        width={24}
+                        height={24}
+                        className="object-contain drop-shadow"
+                      />
                     </div>
                     <div className="truncate">
                       <div className="flex items-center gap-1.5">
                         <h2 className="truncate text-xs font-bold text-white tracking-wide">
-                          Elevate Remote Office
+                          ERS Office
                         </h2>
                       </div>
                       <div className="flex items-center gap-1 text-[10px] text-zinc-400">
@@ -292,8 +299,14 @@ export default function OfficeChannelsSidebar({
                     </div>
                   </div>
                 ) : (
-                  <div className="mx-auto flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 font-bold text-white text-xs">
-                    #
+                  <div className="mx-auto flex h-8 w-8 items-center justify-center rounded-xl bg-purple-600/15 p-1 ring-1 ring-purple-500/25">
+                    <Image
+                      src="/logo-icon.png"
+                      alt="ERS Emblem"
+                      width={22}
+                      height={22}
+                      className="object-contain drop-shadow"
+                    />
                   </div>
                 )}
 

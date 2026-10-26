@@ -104,14 +104,13 @@ interface PixelAvatarProps {
 // ── Palette Generation from Config / Gender Defaults ──
 function resolveConfig(config: AvatarConfig | null | undefined, gender: Gender) {
   const isFemale = gender === 'female'
-  const isNonBinary = gender === 'non_binary'
 
   const skinTone: SkinToneId = config?.skinTone || 'peach'
-  const headwear: HeadwearId = config?.headwear || (isFemale ? 'hair_ponytail' : isNonBinary ? 'beanie_green' : 'cap_red')
-  const outfit: OutfitId = config?.outfit || (isFemale ? 'vest_coral' : isNonBinary ? 'hoodie_emerald' : 'vest_orange')
-  const pants: PantsId = config?.pants || (isFemale ? 'jeans_light' : isNonBinary ? 'trousers_charcoal' : 'jeans_blue')
-  const shoes: ShoesId = config?.shoes || (isFemale ? 'sneakers_red' : isNonBinary ? 'sneakers_emerald' : 'sneakers_red')
-  const accessory: AccessoryId = config?.accessory || (isFemale ? 'backpack_yellow' : isNonBinary ? 'backpack_purple' : 'backpack_yellow')
+  const headwear: HeadwearId = config?.headwear || (isFemale ? 'hair_ponytail' : 'cap_red')
+  const outfit: OutfitId = config?.outfit || (isFemale ? 'vest_coral' : 'vest_orange')
+  const pants: PantsId = config?.pants || (isFemale ? 'jeans_light' : 'jeans_blue')
+  const shoes: ShoesId = config?.shoes || 'sneakers_red'
+  const accessory: AccessoryId = config?.accessory || 'backpack_yellow'
   const glasses: GlassesId = config?.glasses || 'none'
 
   // Skin tones

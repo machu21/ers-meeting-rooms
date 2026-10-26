@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
-const ALLOWED_GENDERS = ['male', 'female', 'non_binary', 'prefer_not_to_say'] as const
+const ALLOWED_GENDERS = ['male', 'female'] as const
 type Gender = typeof ALLOWED_GENDERS[number]
 
 export async function updateEmployeeProfile(formData: FormData) {

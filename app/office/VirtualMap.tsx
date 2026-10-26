@@ -27,6 +27,7 @@ import ScreenShareViewer from './ScreenShareViewer'
 import DeviceSelector from './DeviceSelector'
 import { useLocalParticipant, useRemoteParticipants, AudioTrack, useTrackVolume } from '@livekit/components-react'
 import { Track, RemoteAudioTrack, LocalAudioTrack } from 'livekit-client'
+import CharacterGenderModal from '@/components/CharacterGenderModal'
 
 type MapUser = {
   id: string
@@ -248,6 +249,10 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
     Array.from(playersRef.current.entries()).map(([id, p]) => ({ id, name: p.name, x: p.renderX, y: p.renderY, avatarColor: p.avatarColor, avatar_url: p.avatar_url, gender: p.gender, avatarConfig: p.avatarConfig, isWalking: p.isWalking, isSitting: p.isSitting, direction: p.direction, facingLeft: p.facingLeft }))
   )
 
+  const [showGenderModal, setShowGenderModal] = useState<boolean>(() => {
+    return !currentUser.gender || (currentUser.gender !== 'male' && currentUser.gender !== 'female')
+  })
+
   const me = users.find(u => u.id === currentUser.id) || { x: 800, y: 450, id: currentUser.id, name: currentUser.name, avatarColor: 'bg-blue-500' }
   const myCurrentZone = zones.find(z => me.x >= z.x && me.x <= z.x + z.width && me.y >= z.y && me.y <= z.y + z.height)
   
@@ -449,6 +454,7 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
     const MOVE_KEYS = new Set(['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd'])
     const handleKeyDown = (e: KeyboardEvent) => {
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return
+      if (showGenderModal) return
       if (!e.key) return
       const key = e.key.toLowerCase()
 
@@ -483,7 +489,7 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
       window.removeEventListener('keyup', handleKeyUp)
       window.removeEventListener('blur', handleBlur)
     }
-  }, [handleStop, handleToggleSit])
+  }, [handleStop, handleToggleSit, showGenderModal])
 
   useEffect(() => {
     const roomChannel = supabase.channel(roomId, { config: { broadcast: { self: false } } })
@@ -667,6 +673,7 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
   }
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (showGenderModal) return
     if (isEditingZones) {
       const coords = getMapCoords(e)
       setIsDrawing(true)
@@ -1224,6 +1231,25 @@ export default function VirtualMap({ currentUser, roomId, mapBackground, ambient
           zoneName={activeMinutes.zoneName}
           minutes={activeMinutes}
           onClose={() => setActiveMinutes(null)}
+        />
+      )}
+
+      {showGenderModal && (
+        <CharacterGenderModal
+          isOpen={showGenderModal}
+          currentGender={currentUser.gender}
+          onGenderSelected={(selectedGender) => {
+            currentUser.gender = selectedGender
+            const meMeta = playersRef.current.get(currentUser.id)
+            if (meMeta) {
+              meMeta.gender = selectedGender
+            }
+            setUsers((prev) =>
+              prev.map((u) => (u.id === currentUser.id ? { ...u, gender: selectedGender } : u))
+            )
+            broadcastPosition(meMeta?.renderX ?? 800, meMeta?.renderY ?? 450, true, meMeta?.direction, false, meMeta?.isSitting)
+            setShowGenderModal(false)
+          }}
         />
       )}
     </div>

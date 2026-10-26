@@ -1,9 +1,10 @@
 import Link from 'next/link'
+import Image from 'next/image'
 import { ShieldAlert, ArrowLeft, LayoutDashboard } from 'lucide-react'
 import SignOutButton from '@/components/SignOutButton'
 
 export const metadata = {
-  title: 'Access Restricted | Elevate Remote Office',
+  title: 'Access Restricted | ERS Office',
   description: 'You do not have permission to access this virtual workspace.',
 }
 
@@ -15,6 +16,12 @@ export default function UnauthorizedPage() {
       <div className="absolute bottom-1/4 right-1/4 w-[350px] h-[350px] bg-purple-600/10 rounded-full blur-[100px] pointer-events-none" />
 
       <div className="relative z-10 max-w-md w-full bg-white/[0.03] border border-white/[0.08] backdrop-blur-xl rounded-2xl p-8 text-center shadow-2xl">
+        {/* Brand Emblem */}
+        <div className="flex items-center justify-center gap-2 mb-6">
+          <Image src="/logo-icon.png" alt="ERS Office Emblem" width={28} height={28} className="object-contain drop-shadow" />
+          <span className="text-base font-black tracking-tight text-white">ERS Office</span>
+        </div>
+
         {/* Icon */}
         <div className="mx-auto w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 mb-6 shadow-lg shadow-red-500/5">
           <ShieldAlert className="w-8 h-8" />

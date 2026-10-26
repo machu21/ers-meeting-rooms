@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { MapIcon } from '@heroicons/react/24/solid'
 import SignOutButton from '@/components/SignOutButton'
 
@@ -15,25 +16,18 @@ export default function OfficeNavbar({ role, currentMap }: OfficeNavbarProps) {
       
       {/* LEFT: Branding & Badge */}
       <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2.5">
-          {/* Custom SVG Logo */}
-          <div className="relative h-6 w-6">
-            <svg viewBox="0 0 100 100" className="h-full w-full drop-shadow-md" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <linearGradient id="navGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#9333ea" />
-                  <stop offset="100%" stopColor="#3b0764" />
-                </linearGradient>
-              </defs>
-              <path d="M 50 14 Q 70 30 86 50 Q 70 70 50 86 Q 30 70 14 50 Q 30 30 50 14 Z" stroke="url(#navGradient)" strokeWidth="12" strokeLinejoin="round" />
-              <circle cx="50" cy="14" r="9" fill="url(#navGradient)" />
-              <circle cx="86" cy="50" r="9" fill="url(#navGradient)" />
-              <circle cx="50" cy="86" r="9" fill="url(#navGradient)" />
-              <circle cx="14" cy="50" r="9" fill="url(#navGradient)" />
-            </svg>
+        <Link href="/office" className="group flex items-center gap-2.5">
+          <div className="relative flex h-7 w-7 items-center justify-center">
+            <Image
+              src="/logo-icon.png"
+              alt="ERS Office Emblem"
+              width={28}
+              height={28}
+              className="object-contain drop-shadow transition-transform group-hover:scale-105"
+            />
           </div>
-          <span className="text-lg font-bold tracking-tight text-white">Elevate Remote</span>
-        </div>
+          <span className="text-lg font-black tracking-tight text-white">ERS Office</span>
+        </Link>
 
         {/* Dynamic Role Badge */}
         <span className={`rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${

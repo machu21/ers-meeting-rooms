@@ -21,20 +21,24 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   metadataBase: new URL(defaultUrl),
   title: {
-    default: "Elevate Remote Office",
-    template: "%s | Elevate Remote Office",
+    default: "ERS Office — Elevate Remote Solutions",
+    template: "%s | ERS Office",
   },
   description:
     "A high-performance virtual workspace featuring spatial audio, dynamic rooms, and real-time team collaboration.",
   icons: {
-    icon: "/favicon.ico",
+    icon: [
+      { url: "/favicon.ico" },
+      { url: "/logo-icon.png", type: "image/png" },
+    ],
+    apple: "/apple-touch-icon.png",
   },
   openGraph: {
-    title: "Elevate Remote Office",
+    title: "ERS Office — Virtual Workspace",
     description:
       "A high-performance virtual workspace featuring spatial audio, dynamic rooms, and real-time team collaboration.",
     url: defaultUrl,
-    siteName: "Elevate Remote",
+    siteName: "ERS Office",
     locale: "en_US",
     type: "website",
   },

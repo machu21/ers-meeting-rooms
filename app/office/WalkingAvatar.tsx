@@ -19,15 +19,6 @@ interface GenderStyle {
 
 function getGenderStyle(gender: Gender): GenderStyle {
   switch (gender) {
-    case 'male':
-      return {
-        bodyBg: 'bg-blue-500',
-        shoulderW: 30,
-        hipW: 18,
-        armColor: '#3b82f6',
-        legColor: '#1d4ed8',
-        headRing: '#3b82f6',
-      }
     case 'female':
       return {
         bodyBg: 'bg-pink-500',
@@ -37,23 +28,15 @@ function getGenderStyle(gender: Gender): GenderStyle {
         legColor: '#be185d',
         headRing: '#ec4899',
       }
-    case 'non_binary':
+    case 'male':
+    default:
       return {
-        bodyBg: 'bg-emerald-500',
-        shoulderW: 25,
-        hipW: 22,
-        armColor: '#10b981',
-        legColor: '#065f46',
-        headRing: '#10b981',
-      }
-    default: // prefer_not_to_say or null
-      return {
-        bodyBg: 'bg-indigo-500',
-        shoulderW: 25,
-        hipW: 22,
-        armColor: '#6366f1',
-        legColor: '#3730a3',
-        headRing: '#6366f1',
+        bodyBg: 'bg-blue-500',
+        shoulderW: 30,
+        hipW: 18,
+        armColor: '#3b82f6',
+        legColor: '#1d4ed8',
+        headRing: '#3b82f6',
       }
   }
 }

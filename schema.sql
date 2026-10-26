@@ -13,7 +13,7 @@ CREATE TABLE public.profiles (
   accessible_maps ARRAY DEFAULT ARRAY['office'::text, 'meeting-room'::text, 'prayer-room'::text],
   is_active boolean DEFAULT true,
   display_name text,
-  gender text CHECK (gender = ANY (ARRAY['male'::text, 'female'::text, 'non_binary'::text, 'prefer_not_to_say'::text])),
+  gender text CHECK (gender IN ('male', 'female')),
   birth_date date,
   address text,
   avatar_config jsonb DEFAULT '{}'::jsonb,

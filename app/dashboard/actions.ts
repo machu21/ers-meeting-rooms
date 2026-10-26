@@ -33,6 +33,9 @@ export async function createEmployeeAccount(formData: FormData): Promise<{ succe
   const password = formData.get('password') as string
   const role = formData.get('role') as string
   
+  const genderRaw = formData.get('gender') as string
+  const gender = genderRaw === 'female' ? 'female' : 'male'
+
   // gets an array of strings from all checkboxes named "maps"
   const accessibleMaps = formData.getAll('maps') as string[] 
 
@@ -61,7 +64,8 @@ export async function createEmployeeAccount(formData: FormData): Promise<{ succe
           id: authData.user.id, 
           email: email, 
           role: role, 
-          accessible_maps: accessibleMaps 
+          accessible_maps: accessibleMaps,
+          gender: gender,
         })
 
       if (profileError) return { success: false, message: "User created, but profile setup failed." }

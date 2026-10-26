@@ -126,12 +126,12 @@ async function DashboardContent() {
         {/* Header */}
         <header className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex items-center gap-5">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white p-2 shadow-sm ring-1 ring-black/5">
-              <Image src="/logo.png" alt="Logo" width={48} height={48} className="object-contain drop-shadow-sm" />
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/90 p-2.5 shadow-md shadow-purple-500/10 ring-1 ring-purple-600/15 backdrop-blur-md">
+              <Image src="/logo-icon.png" alt="ERS Office Emblem" width={48} height={48} className="object-contain drop-shadow transition-transform hover:scale-105" />
             </div>
             <div>
-              <p className="text-xs font-black uppercase tracking-widest text-indigo-500">
-                {profile.role === 'admin' ? 'Admin' : 'Supervisor'} Access
+              <p className="text-xs font-black uppercase tracking-widest text-purple-600">
+                ERS Office • {profile.role === 'admin' ? 'Admin' : 'Supervisor'} Portal
               </p>
               <h1 className="text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">
                 {profile.role === 'admin' ? 'Admin Dashboard' : 'Supervisor Dashboard'}

@@ -84,6 +84,25 @@ export default function CreateUserForm() {
           </div>
         </div>
 
+        {/* Character Gender Select */}
+        <div className="relative">
+          <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-500">
+            Character Gender
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="group relative flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-white/60 bg-white/50 px-4 py-3 text-sm font-bold text-slate-700 shadow-sm transition-all has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50 has-[:checked]:text-blue-700 has-[:checked]:shadow-md hover:bg-white/80">
+              <input type="radio" name="gender" value="male" defaultChecked className="peer sr-only" />
+              <span>👨 Male Character</span>
+              <div className="absolute inset-0 rounded-2xl ring-2 ring-transparent transition-all peer-checked:ring-blue-300"></div>
+            </label>
+            <label className="group relative flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-white/60 bg-white/50 px-4 py-3 text-sm font-bold text-slate-700 shadow-sm transition-all has-[:checked]:border-pink-500 has-[:checked]:bg-pink-50 has-[:checked]:text-pink-700 has-[:checked]:shadow-md hover:bg-white/80">
+              <input type="radio" name="gender" value="female" className="peer sr-only" />
+              <span>👩 Female Character</span>
+              <div className="absolute inset-0 rounded-2xl ring-2 ring-transparent transition-all peer-checked:ring-pink-300"></div>
+            </label>
+          </div>
+        </div>
+
         {/* Role Select */}
         <div className="relative">
           <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-500">

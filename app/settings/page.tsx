@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { updateEmployeeProfile } from './actions'
 import Link from 'next/link'
+import Image from 'next/image'
 import { UserCircleIcon, ArrowLeftIcon, SparklesIcon } from '@heroicons/react/24/solid'
 import { useRouter } from 'next/navigation'
 import {
@@ -19,20 +20,18 @@ import {
   GLASSES_OPTIONS,
 } from '@/app/office/PixelAvatar'
 
-type Gender = 'male' | 'female' | 'non_binary' | 'prefer_not_to_say' | ''
+type Gender = 'male' | 'female' | ''
 
 const GENDER_OPTIONS: { value: Gender; label: string }[] = [
   { value: '', label: 'Select gender…' },
   { value: 'male', label: 'Male' },
   { value: 'female', label: 'Female' },
-  { value: 'non_binary', label: 'Non-binary' },
-  { value: 'prefer_not_to_say', label: 'Prefer not to say' },
 ]
 
 type WardrobeTab = 'skin' | 'headwear' | 'outfit' | 'pants' | 'shoes' | 'accessory' | 'glasses'
 
 export default function SettingsPage() {
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const [loading, setLoading] = useState(true)
   
   // Form State — Profile
@@ -65,22 +64,26 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
 
   useEffect(() => {
+    let isMounted = true
     async function loadProfile() {
       const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
+      if (user && isMounted) {
         const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-        setDisplayName(data?.display_name || '')
-        if (data?.avatar_url) setPreviewImage(data.avatar_url)
-        setGender((data?.gender as Gender) || '')
-        setBirthDate(data?.birth_date || '')
-        setAddress(data?.address || '')
-        if (data?.avatar_config && typeof data.avatar_config === 'object') {
-          setAvatarConfig((prev) => ({ ...prev, ...(data.avatar_config as AvatarConfig) }))
+        if (data && isMounted) {
+          setDisplayName(data.display_name || '')
+          if (data.avatar_url) setPreviewImage(data.avatar_url)
+          setGender((data.gender as Gender) || '')
+          setBirthDate(data.birth_date || '')
+          setAddress(data.address || '')
+          if (data.avatar_config && typeof data.avatar_config === 'object') {
+            setAvatarConfig((prev) => ({ ...prev, ...(data.avatar_config as AvatarConfig) }))
+          }
         }
       }
-      setLoading(false)
+      if (isMounted) setLoading(false)
     }
     loadProfile()
+    return () => { isMounted = false }
   }, [supabase])
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -126,14 +129,19 @@ export default function SettingsPage() {
 
       <div className="relative z-10 w-full max-w-4xl">
         <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-white flex items-center gap-3">
-              <span>My Settings</span>
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                <SparklesIcon className="w-3.5 h-3.5" /> Retro Wardrobe
-              </span>
-            </h1>
-            <p className="mt-1 text-sm text-gray-400">Customize your retro avatar look and profile information.</p>
+          <div className="flex items-center gap-3.5">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-purple-600/10 p-1.5 ring-1 ring-purple-600/20 backdrop-blur-md">
+              <Image src="/logo-icon.png" alt="ERS Office Emblem" width={32} height={32} className="object-contain drop-shadow" />
+            </div>
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white flex items-center gap-3">
+                <span>My Settings</span>
+                <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                  <SparklesIcon className="w-3.5 h-3.5" /> Retro Wardrobe
+                </span>
+              </h1>
+              <p className="mt-0.5 text-xs sm:text-sm text-gray-400">ERS Office • Customize your retro avatar look and profile information.</p>
+            </div>
           </div>
           <Link 
             href="/office" 
@@ -516,20 +524,27 @@ export default function SettingsPage() {
                 <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-400" htmlFor="gender">
                   Gender
                 </label>
-                <select
-                  id="gender"
-                  name="gender"
-                  value={gender}
-                  onChange={(e) => setGender(e.target.value as Gender)}
-                  className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white shadow-inner outline-none transition-all focus:border-blue-500/50 focus:bg-black/40 focus:ring-4 focus:ring-blue-500/10 appearance-none cursor-pointer"
-                >
-                  {GENDER_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value} className="bg-gray-900">
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-2 text-xs text-gray-500">Self-identified gender preference.</p>
+                <div className="relative">
+                  <select
+                    id="gender"
+                    name="gender"
+                    value={gender}
+                    onChange={(e) => setGender(e.target.value as Gender)}
+                    className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 pr-10 text-sm text-white shadow-inner outline-none transition-all focus:border-blue-500/50 focus:bg-black/40 focus:ring-4 focus:ring-blue-500/10 appearance-none cursor-pointer"
+                  >
+                    {GENDER_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value} className="bg-gray-900 text-white">
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3.5 text-gray-400">
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
+                <p className="mt-2 text-xs text-gray-500">Self-identified gender preference for your character avatar.</p>
               </div>
 
               {/* Birthday */}
